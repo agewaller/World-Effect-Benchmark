@@ -594,12 +594,14 @@ function renderFactorRank(){
 
   if(topCorr) {
     // 正相関が高い順（top）
-    posRows = topCorr.top.slice(0, n).map(([ k, r ], i) => {
+    posRows = topCorr.top.slice(0, n).map((item, i) => {
+      const k = item[0], r = item[1];
       const ff = DATA.factors[k]; if(!ff) return null;
       return { i, key:k, label:ff.label, selected:ff.selected, r, cg:ff.corr_growth, ch:ff.corr_happiness };
     }).filter(Boolean);
-    // 負相関が高い順（bottom → 絶対値で負）
-    negRows = topCorr.bottom.slice(0, n).map(([ k, r ], i) => {
+    // 負相関が高い順（bottom）
+    negRows = topCorr.bottom.slice(0, n).map((item, i) => {
+      const k = item[0], r = item[1];
       const ff = DATA.factors[k]; if(!ff) return null;
       return { i, key:k, label:ff.label, selected:ff.selected, r, cg:ff.corr_growth, ch:ff.corr_happiness };
     }).filter(Boolean);

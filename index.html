@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>社会戦略フォーラム — データ探索</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+  /* ===== TOKENS ===== */
+  :root {
+    --bg:        #0d0f14;
+    --surface:   #151820;
+    --border:    #252a35;
+    --accent:    #e8c840;
+    --accent2:   #4a9eff;
+    --neg:       #ff6b6b;
+    --pos:       #5dd6a8;
+    --text:      #e8eaf0;
+    --muted:     #7a8094;
+    --panel:     #1a1e28;
+    --hover:     #1f2433;
+
+    --font-display: 'Noto Sans JP', 'Hiragino Kaku Gothic ProN', sans-serif;
+    --r: 6px;
+    --transition: 0.18s ease;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-display); font-size: 14px; }
+
+  /* ===== LAYOUT ===== */
+  #app { display: flex; height: 100vh; overflow: hidden; }
+
+  /* Sidebar */
+  #sidebar {
+    width: 240px; flex-shrink: 0;
+    background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #sidebar-header {
+    padding: 20px 16px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  #sidebar-header .logo { font-size: 11px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 6px; }
+  #sidebar-header h1 { font-size: 15px; font-weight: 700; color: var(--accent); line-height: 1.4; }
+  #sidebar-header p { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  nav { flex: 1; overflow-y: auto; padding: 8px 0; }
+  .nav-section { padding: 10px 16px 4px; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 16px; cursor: pointer; color: var(--muted);
+    transition: var(--transition); border-left: 2px solid transparent;
+    font-size: 13px;
+  }
+  .nav-item:hover { background: var(--hover); color: var(--text); }
+  .nav-item.active { color: var(--accent); border-left-color: var(--accent); background: rgba(232,200,64,.06); }
+  .nav-item .icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; }
+
+  #sidebar-footer { padding: 12px 16px; border-top: 1px solid var(--border); font-size: 10px; color: var(--muted); }
+  #sidebar-footer span { color: var(--accent); }
+
+  /* Main */
+  #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  #topbar {
+    height: 52px; flex-shrink: 0;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 24px; gap: 16px;
+  }
+  #topbar h2 { font-size: 16px; font-weight: 600; flex: 1; }
+  #topbar .badge {
+    background: var(--panel); border: 1px solid var(--border);
+    padding: 3px 10px; border-radius: 20px; font-size: 11px; color: var(--muted);
+  }
+
+  #content { flex: 1; overflow-y: auto; padding: 24px; }
+
+  /* ===== PANELS ===== */
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* ===== CONTROLS ===== */
+  .control-row { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: flex-end; }
+  .control-group { display: flex; flex-direction: column; gap: 5px; }
+  .control-group label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+
+  select, input[type=text] {
+    background: var(--panel); border: 1px solid var(--border);
+    color: var(--text); padding: 8px 12px; border-radius: var(--r);
+    font-size: 13px; font-family: inherit; outline: none; min-width: 200px;
+  }
+  select:focus, input[type=text]:focus { border-color: var(--accent2); }
+  select option { background: var(--panel); }
+
+  .btn {
+    padding: 8px 18px; border-radius: var(--r); border: none; cursor: pointer;
+    font-size: 13px; font-weight: 600; font-family: inherit; transition: var(--transition);
+  }
+  .btn-primary { background: var(--accent); color: #111; }
+  .btn-primary:hover { background: #f0d050; }
+  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+  .btn-ghost:hover { border-color: var(--text); color: var(--text); }
+  .btn-ghost.active { border-color: var(--accent2); color: var(--accent2); background: rgba(74,158,255,.1); }
+
+  .toggle-group { display: flex; gap: 4px; }
+
+  /* ===== CARDS ===== */
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 16px 20px; margin-bottom: 16px;
+  }
+  .card-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 12px; }
+
+  /* KGI 相関表示 */
+  .corr-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  .corr-card {
+    flex: 1; min-width: 160px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 14px 18px;
+  }
+  .corr-card .label { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .corr-card .value { font-size: 28px; font-weight: 700; }
+  .corr-card .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .pos-corr { color: var(--pos); }
+  .neg-corr { color: var(--neg); }
+  .neu-corr { color: var(--muted); }
+
+  /* ===== RANK TABLE ===== */
+  .rank-table { width: 100%; border-collapse: collapse; }
+  .rank-table th {
+    text-align: left; padding: 8px 12px; font-size: 11px;
+    color: var(--muted); border-bottom: 1px solid var(--border);
+    text-transform: uppercase; letter-spacing: .06em;
+  }
+  .rank-table td { padding: 7px 12px; border-bottom: 1px solid rgba(255,255,255,.04); font-size: 13px; }
+  .rank-table tr:hover td { background: var(--hover); }
+  .rank-num { color: var(--muted); font-size: 11px; width: 32px; }
+  .rank-bar-cell { width: 120px; }
+  .rank-bar-bg { background: rgba(255,255,255,.06); border-radius: 3px; height: 6px; overflow: hidden; }
+  .rank-bar { height: 6px; border-radius: 3px; }
+  .bar-pos { background: var(--pos); }
+  .bar-neg { background: var(--neg); }
+  .flag-cell { font-size: 18px; width: 36px; }
+  .country-name { font-weight: 500; }
+  .score-val { font-family: 'SF Mono', monospace; font-size: 12px; color: var(--accent); text-align: right; }
+  .deviation-val { font-family: 'SF Mono', monospace; font-size: 12px; text-align: right; }
+
+  /* Highlight JPN */
+  .row-jpn td { background: rgba(232,200,64,.05) !important; }
+  .row-jpn td:first-child { border-left: 2px solid var(--accent); }
+
+  /* ===== SCATTER ===== */
+  .chart-wrap { position: relative; }
+  svg text { font-family: var(--font-display); }
+  .axis-label { fill: var(--muted); font-size: 11px; }
+  .grid-line { stroke: var(--border); stroke-width: 1; }
+  .dot { cursor: pointer; transition: r .1s; }
+  .dot:hover { r: 7; }
+  .dot-jpn { filter: drop-shadow(0 0 6px var(--accent)); }
+
+  .tooltip {
+    position: absolute; pointer-events: none;
+    background: rgba(10,12,20,.95); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 8px 12px; font-size: 12px;
+    line-height: 1.6; min-width: 160px; z-index: 100;
+    backdrop-filter: blur(8px);
+  }
+  .tooltip strong { color: var(--accent); }
+  .tooltip-hidden { display: none; }
+
+  /* ===== WORLD EFFECT BENCHMARK ===== */
+  .quadrant-label { fill: var(--muted); font-size: 10px; font-style: italic; }
+  .wef-dot { cursor: pointer; }
+  .wef-dot:hover { opacity: 1 !important; }
+  .wef-label { fill: var(--text); font-size: 10px; pointer-events: none; }
+
+  /* ===== COUNTRY COMPARE ===== */
+  .compare-grid { display: grid; gap: 8px; }
+  .compare-row {
+    display: grid; grid-template-columns: 1fr 80px 80px 100px;
+    align-items: center; gap: 12px;
+    padding: 6px 12px; border-radius: 4px;
+  }
+  .compare-row:hover { background: var(--hover); }
+  .compare-row.header { font-size: 11px; color: var(--muted); padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+  .compare-bar-wrap { position: relative; height: 6px; border-radius: 3px; background: rgba(255,255,255,.06); }
+  .compare-bar { position: absolute; height: 6px; border-radius: 3px; }
+  .cf-label { font-size: 12px; color: var(--text); }
+  .cf-val { font-size: 12px; font-family: monospace; text-align: right; }
+
+  /* ===== OVERVIEW ===== */
+  .overview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .ov-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--r);
+    padding: 14px; cursor: pointer; transition: var(--transition);
+  }
+  .ov-card:hover { border-color: var(--accent2); background: var(--hover); }
+  .ov-card .ov-label { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+  .ov-card .ov-cat { font-size: 10px; color: var(--muted); margin-bottom: 8px; }
+  .ov-card .ov-bars { display: flex; gap: 6px; }
+  .ov-mini-bar { flex: 1; }
+  .ov-mini-label { font-size: 9px; color: var(--muted); margin-bottom: 2px; }
+  .ov-mini-val { font-size: 11px; font-weight: 600; }
+
+  /* Search */
+  .search-wrap { position: relative; margin-bottom: 16px; }
+  .search-wrap input { width: 100%; padding-left: 36px; }
+  .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 14px; }
+
+  /* empty state */
+  .empty { padding: 40px; text-align: center; color: var(--muted); }
+
+  /* ===== SCROLLBAR ===== */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  .loading { padding: 60px; text-align: center; color: var(--muted); font-size: 14px; }
+  .loading span { color: var(--accent); }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <div class="logo">社会戦略フォーラム</div>
+      <h1>World Effect<br>Explorer</h1>
+      <p>37カ国 × 148選抜因子</p>
+    </div>
+    <nav>
+      <div class="nav-section">因子を理解する</div>
+      <div class="nav-item active" data-view="factor-kgi">
+        <span class="icon">📊</span>KGI相関を見る
+      </div>
+      <div class="nav-item" data-view="factor-rank">
+        <span class="icon">🔗</span>相関ランキング
+      </div>
+      <div class="nav-item" data-view="factor-scatter">
+        <span class="icon">📈</span>国別散布図
+      </div>
+      <div class="nav-item" data-view="factor-country-rank">
+        <span class="icon">🏆</span>国別スコアランキング
+      </div>
+      <div class="nav-section">国を見る</div>
+      <div class="nav-item" data-view="country-profile">
+        <span class="icon">🌍</span>国プロフィール
+      </div>
+      <div class="nav-item" data-view="country-compare">
+        <span class="icon">⚖️</span>2国比較
+      </div>
+      <div class="nav-section">全体を俯瞰する</div>
+      <div class="nav-item" data-view="world-effect">
+        <span class="icon">🗺️</span>World Effect Map
+      </div>
+    </nav>
+    <div id="sidebar-footer">
+      分析対象: <span>OECD加盟かつ除外フラグなし</span><br>
+      データ: 50+ 国際調査
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div id="main">
+    <div id="topbar">
+      <h2 id="view-title">KGI相関を見る</h2>
+      <div class="badge" id="topbar-badge">選抜148因子</div>
+    </div>
+    <div id="content">
+      <div id="loading" class="loading">データを読み込み中… <span>data.json</span></div>
+
+      <!-- ====== VIEW: factor-kgi ====== -->
+      <div class="view" id="view-factor-kgi">
+        <div class="control-row">
+          <div class="control-group">
+            <label>因子を選択</label>
+            <select id="kgi-factor-select"></select>
+          </div>
+        </div>
+        <div id="kgi-result"></div>
+      </div>
+
+      <!-- ====== VIEW: factor-rank ====== -->
+      <div class="view" id="view-factor-rank">
+        <div class="control-row">
+          <div class="control-group">
+            <label>因子を選択</label>
+            <select id="rank-factor-select"></select>
+          </div>
+          <div class="control-group">
+            <label>表示件数</label>
+            <select id="rank-n-select">
+              <option value="10">Top 10</option>
+              <option value="20" selected>Top 20</option>
+              <option value="50">Top 50</option>
+            </select>
+          </div>
+        </div>
+        <div id="rank-result"></div>
+      </div>
+
+      <!-- ====== VIEW: factor-scatter ====== -->
+      <div class="view" id="view-factor-scatter">
+        <div class="control-row">
+          <div class="control-group">
+            <label>因子を選択（横軸）</label>
+            <select id="scatter-factor-select"></select>
+          </div>
+          <div class="control-group">
+            <label>縦軸</label>
+            <div class="toggle-group">
+              <button class="btn btn-ghost active" id="scatter-kgi-growth">GDP成長</button>
+              <button class="btn btn-ghost" id="scatter-kgi-hap">幸福</button>
+            </div>
+          </div>
+        </div>
+        <div class="chart-wrap" id="scatter-wrap" style="position:relative">
+          <svg id="scatter-svg"></svg>
+          <div class="tooltip tooltip-hidden" id="scatter-tooltip"></div>
+        </div>
+      </div>
+
+      <!-- ====== VIEW: factor-country-rank ====== -->
+      <div class="view" id="view-factor-country-rank">
+        <div class="control-row">
+          <div class="control-group">
+            <label>因子を選択</label>
+            <select id="cr-factor-select"></select>
+          </div>
+          <div class="control-group">
+            <label>並び順</label>
+            <div class="toggle-group">
+              <button class="btn btn-ghost active" id="cr-sort-desc">高い順</button>
+              <button class="btn btn-ghost" id="cr-sort-asc">低い順</button>
+            </div>
+          </div>
+        </div>
+        <div id="cr-result"></div>
+      </div>
+
+      <!-- ====== VIEW: country-profile ====== -->
+      <div class="view" id="view-country-profile">
+        <div class="control-row">
+          <div class="control-group">
+            <label>国を選択</label>
+            <select id="profile-country-select"></select>
+          </div>
+          <div class="control-group">
+            <label>表示</label>
+            <div class="toggle-group">
+              <button class="btn btn-ghost active" id="profile-top">トップ因子</button>
+              <button class="btn btn-ghost" id="profile-bottom">ワースト因子</button>
+            </div>
+          </div>
+        </div>
+        <div id="profile-result"></div>
+      </div>
+
+      <!-- ====== VIEW: country-compare ====== -->
+      <div class="view" id="view-country-compare">
+        <div class="control-row">
+          <div class="control-group">
+            <label>国1</label>
+            <select id="cmp-country1"></select>
+          </div>
+          <div class="control-group">
+            <label>国2</label>
+            <select id="cmp-country2"></select>
+          </div>
+        </div>
+        <div id="cmp-result"></div>
+      </div>
+
+      <!-- ====== VIEW: world-effect ====== -->
+      <div class="view" id="view-world-effect">
+        <div class="control-row">
+          <div class="control-group">
+            <label>表示対象</label>
+            <div class="toggle-group">
+              <button class="btn btn-ghost active" id="wef-mode-selected">選抜148因子</button>
+              <button class="btn btn-ghost" id="wef-mode-all">全因子（1600+）</button>
+            </div>
+          </div>
+          <div class="control-group">
+            <label>ハイライト因子（任意）</label>
+            <select id="wef-highlight-select"><option value="">— ハイライトしない —</option></select>
+          </div>
+        </div>
+        <div class="chart-wrap" style="position:relative">
+          <svg id="wef-svg"></svg>
+          <div class="tooltip tooltip-hidden" id="wef-tooltip"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ====================================================
+// DATA LOAD
+// ====================================================
+let DATA = null;
+let FACTORS = [];      // [{key, label, category, corr_growth, corr_happiness}]
+let COUNTRIES = [];    // [{id, name}]
+
+const FLAGS = {
+  AUS:'🇦🇺',AUT:'🇦🇹',BEL:'🇧🇪',CAN:'🇨🇦',CHL:'🇨🇱',COL:'🇨🇴',CRI:'🇨🇷',CZE:'🇨🇿',
+  DNK:'🇩🇰',EST:'🇪🇪',FIN:'🇫🇮',FRA:'🇫🇷',DEU:'🇩🇪',GRC:'🇬🇷',HUN:'🇭🇺',ISL:'🇮🇸',
+  IRL:'🇮🇪',ISR:'🇮🇱',ITA:'🇮🇹',JPN:'🇯🇵',KOR:'🇰🇷',LVA:'🇱🇻',LTU:'🇱🇹',LUX:'🇱🇺',
+  MEX:'🇲🇽',NLD:'🇳🇱',NZL:'🇳🇿',NOR:'🇳🇴',POL:'🇵🇱',PRT:'🇵🇹',SVK:'🇸🇰',SVN:'🇸🇮',
+  ESP:'🇪🇸',SWE:'🇸🇪',CHE:'🇨🇭',GBR:'🇬🇧',USA:'🇺🇸'
+};
+
+async function loadData() {
+  try {
+    const res = await fetch('data.json');
+    DATA = await res.json();
+
+    // 選抜因子リスト
+    FACTORS = Object.entries(DATA.factors).map(([key, v]) => ({
+      key, label: v.label, category: v.category,
+      corr_growth: v.corr_growth, corr_happiness: v.corr_happiness
+    })).sort((a,b) => a.label.localeCompare(b.label, 'ja'));
+
+    // 国リスト
+    COUNTRIES = DATA.country_list.slice().sort((a,b) => {
+      if (a.id === 'JPN') return -1;
+      if (b.id === 'JPN') return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    document.getElementById('loading').style.display = 'none';
+    initAll();
+    showView('factor-kgi');
+  } catch(e) {
+    document.getElementById('loading').innerHTML =
+      `<div style="color:var(--neg)">⚠️ data.json を読み込めませんでした。<br>このHTMLと同じディレクトリに data.json を配置してください。</div>`;
+  }
+}
+
+// ====================================================
+// NAVIGATION
+// ====================================================
+const VIEW_TITLES = {
+  'factor-kgi': 'KGI相関を見る',
+  'factor-rank': '相関ランキング',
+  'factor-scatter': '国別散布図',
+  'factor-country-rank': '国別スコアランキング',
+  'country-profile': '国プロフィール',
+  'country-compare': '2国比較',
+  'world-effect': 'World Effect Benchmark',
+};
+
+function showView(id) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + id)?.classList.add('active');
+  document.querySelector(`[data-view="${id}"]`)?.classList.add('active');
+  document.getElementById('view-title').textContent = VIEW_TITLES[id] || '';
+}
+
+document.querySelectorAll('.nav-item').forEach(el => {
+  el.addEventListener('click', () => showView(el.dataset.view));
+});
+
+// ====================================================
+// HELPERS
+// ====================================================
+function corrColor(v) {
+  if (v === null || v === undefined) return 'var(--muted)';
+  if (v >= 0.2) return 'var(--pos)';
+  if (v <= -0.2) return 'var(--neg)';
+  return 'var(--muted)';
+}
+function corrClass(v) {
+  if (v === null || v === undefined) return 'neu-corr';
+  if (v >= 0.2) return 'pos-corr';
+  if (v <= -0.2) return 'neg-corr';
+  return 'neu-corr';
+}
+function fmtCorr(v) {
+  if (v === null || v === undefined) return '—';
+  return (v > 0 ? '+' : '') + v.toFixed(3);
+}
+function fmtScore(v) {
+  if (v === null || v === undefined) return '—';
+  return v.toFixed ? v.toFixed(2) : v;
+}
+function deviationColor(d) {
+  if (d === null || d === undefined) return 'var(--muted)';
+  if (d >= 60) return 'var(--pos)';
+  if (d <= 40) return 'var(--neg)';
+  return 'var(--text)';
+}
+
+function buildFactorSelect(sel, selectedKey) {
+  // グループ化
+  const cats = {};
+  FACTORS.forEach(f => {
+    const c = f.category || 'その他';
+    if (!cats[c]) cats[c] = [];
+    cats[c].push(f);
+  });
+  sel.innerHTML = '';
+  Object.entries(cats).sort().forEach(([cat, items]) => {
+    const grp = document.createElement('optgroup');
+    grp.label = cat;
+    items.forEach(f => {
+      const o = document.createElement('option');
+      o.value = f.key;
+      o.textContent = f.label;
+      if (f.key === selectedKey) o.selected = true;
+      grp.appendChild(o);
+    });
+    sel.appendChild(grp);
+  });
+}
+
+function buildCountrySelect(sel, defaultId) {
+  sel.innerHTML = COUNTRIES.map(c =>
+    `<option value="${c.id}" ${c.id === defaultId ? 'selected':''}>
+      ${FLAGS[c.id]||''} ${c.name} (${c.id})
+    </option>`
+  ).join('');
+}
+
+// ====================================================
+// VIEW: factor-kgi
+// ====================================================
+function initFactorKgi() {
+  const sel = document.getElementById('kgi-factor-select');
+  const DEFAULT = 'GL_Employ Engagement_2023';
+  buildFactorSelect(sel, DEFAULT);
+  sel.addEventListener('change', renderKgi);
+  renderKgi();
+}
+
+function renderKgi() {
+  const key = document.getElementById('kgi-factor-select').value;
+  const f = DATA.factors[key];
+  if (!f) return;
+
+  const cg = f.corr_growth, ch = f.corr_happiness;
+  const jpnDev = f.deviation_scores?.JPN;
+  const jpnScore = f.country_scores?.JPN;
+
+  document.getElementById('kgi-result').innerHTML = `
+    <div class="corr-row">
+      <div class="corr-card">
+        <div class="label">📈 GDP成長率との相関</div>
+        <div class="value ${corrClass(cg)}">${fmtCorr(cg)}</div>
+        <div class="sub">1999–2019 CAGR (PPP)</div>
+      </div>
+      <div class="corr-card">
+        <div class="label">😊 幸福（笑顔）との相関</div>
+        <div class="value ${corrClass(ch)}">${fmtCorr(ch)}</div>
+        <div class="sub">Positive affect 2020–2023</div>
+      </div>
+      <div class="corr-card">
+        <div class="label">🇯🇵 日本のOECD内偏差値</div>
+        <div class="value" style="color:${deviationColor(jpnDev)}">${jpnDev !== null && jpnDev !== undefined ? jpnDev.toFixed(1) : '—'}</div>
+        <div class="sub">実値: ${jpnScore !== null && jpnScore !== undefined ? fmtScore(jpnScore) : '—'}</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">因子情報</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.8">
+        <span style="color:var(--text);font-weight:600">${f.label}</span>
+        ${f.category ? `&nbsp;<span style="background:var(--border);padding:2px 8px;border-radius:20px;font-size:11px">${f.category}</span>` : ''}<br>
+        コード: <code style="color:var(--accent2);font-size:11px">${key}</code>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">象限分類（World Effect Benchmark）</div>
+      ${quadrantBadge(cg, ch)}
+    </div>
+  `;
+}
+
+function quadrantBadge(cg, ch) {
+  if (cg === null && ch === null) return '<span style="color:var(--muted)">データ不足</span>';
+  const G = (cg || 0) >= 0.2, G_ = (cg || 0) <= -0.2;
+  const H = (ch || 0) >= 0.2, H_ = (ch || 0) <= -0.2;
+
+  let label, desc, color;
+  if (G && H)       { label='✅ SUCCESS（両利き）'; desc='成長にも幸福にも有効な最重要因子'; color='var(--pos)'; }
+  else if (G && H_) { label='⚔️ SPARTA（成長優先）'; desc='成長には有効だが幸福を損なうトレードオフ因子'; color='var(--accent)'; }
+  else if (H && G_) { label='🌸 SPOIL（幸福優先）'; desc='幸福には有効だが成長を損なうトレードオフ因子'; color='var(--accent2)'; }
+  else if (G_ && H_){ label='🚫 SABOTAGE（逆効果）'; desc='成長にも幸福にも負の影響を持つ因子'; color='var(--neg)'; }
+  else              { label='⬜ SLIGHT（微力）'; desc='いずれとも相関が薄く、効果が限定的'; color='var(--muted)'; }
+
+  return `
+    <div style="display:inline-block;padding:10px 18px;border-radius:var(--r);border:1px solid ${color};color:${color}">
+      <div style="font-size:15px;font-weight:700;margin-bottom:4px">${label}</div>
+      <div style="font-size:12px;color:var(--muted)">${desc}</div>
+    </div>`;
+}
+
+// ====================================================
+// VIEW: factor-rank (相関ランキング)
+// ====================================================
+function initFactorRank() {
+  const sel = document.getElementById('rank-factor-select');
+  buildFactorSelect(sel, 'GL_Employ Engagement_2023');
+  sel.addEventListener('change', renderFactorRank);
+  document.getElementById('rank-n-select').addEventListener('change', renderFactorRank);
+  renderFactorRank();
+}
+
+function renderFactorRank() {
+  const key = document.getElementById('rank-factor-select').value;
+  const n = parseInt(document.getElementById('rank-n-select').value);
+  const allCorr = DATA.all_factors_corr;
+
+  // 全因子の中で key との相関を取得する必要があるが、
+  // 事前計算済みデータには含まれていないため、
+  // 選抜148因子内での相関で代替（十分に意味がある）
+  // → data.jsonにfactor間の相関は持っていないため
+  //   代わりに「成長/幸福と同じ方向に動く因子」のランキングを表示
+  const f = DATA.factors[key];
+  if (!f) return;
+
+  // 選抜148因子の中で、この因子と類似の相関パターンを持つものを探す
+  // similarity = |corr_growth差| + |corr_happiness差| の小さいもの
+  const similar = FACTORS
+    .filter(ff => ff.key !== key && ff.corr_growth !== null && ff.corr_happiness !== null)
+    .map(ff => ({
+      ...ff,
+      sim: Math.abs((ff.corr_growth || 0) - (f.corr_growth || 0))
+           + Math.abs((ff.corr_happiness || 0) - (f.corr_happiness || 0))
+    }))
+    .sort((a,b) => a.sim - b.sim);
+
+  // 正相関方向（成長相関が近い順）
+  const posDir = FACTORS
+    .filter(ff => ff.key !== key && ff.corr_growth !== null)
+    .map(ff => ({ ...ff, diff: (ff.corr_growth||0) * Math.sign(f.corr_growth||1) }))
+    .sort((a,b) => b.diff - a.diff);
+
+  const negDir = [...posDir].sort((a,b) => a.diff - b.diff);
+
+  document.getElementById('rank-result').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="card">
+        <div class="card-title">✅ 類似した効果パターン（Top ${n}）</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:12px">
+          <strong style="color:var(--accent)">${f.label}</strong> と成長・幸福相関が近い因子
+        </p>
+        <table class="rank-table">
+          <thead><tr>
+            <th>#</th><th>因子</th><th>成長r</th><th>幸福r</th>
+          </tr></thead>
+          <tbody>
+            ${similar.slice(0,n).map((ff,i) => `
+              <tr>
+                <td class="rank-num">${i+1}</td>
+                <td>${ff.label}</td>
+                <td class="${corrClass(ff.corr_growth)}">${fmtCorr(ff.corr_growth)}</td>
+                <td class="${corrClass(ff.corr_happiness)}">${fmtCorr(ff.corr_happiness)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-title">🔴 逆の効果パターン（Bottom ${n}）</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:12px">
+          <strong style="color:var(--neg)">${f.label}</strong> と反対の効果を持つ因子
+        </p>
+        <table class="rank-table">
+          <thead><tr>
+            <th>#</th><th>因子</th><th>成長r</th><th>幸福r</th>
+          </tr></thead>
+          <tbody>
+            ${similar.slice(-n).reverse().map((ff,i) => `
+              <tr>
+                <td class="rank-num">${i+1}</td>
+                <td>${ff.label}</td>
+                <td class="${corrClass(ff.corr_growth)}">${fmtCorr(ff.corr_growth)}</td>
+                <td class="${corrClass(ff.corr_happiness)}">${fmtCorr(ff.corr_happiness)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+// ====================================================
+// VIEW: factor-scatter
+// ====================================================
+let scatterKgi = 'growth';
+
+function initFactorScatter() {
+  const sel = document.getElementById('scatter-factor-select');
+  buildFactorSelect(sel, 'GL_Employ Engagement_2023');
+  sel.addEventListener('change', renderScatter);
+  document.getElementById('scatter-kgi-growth').addEventListener('click', () => {
+    scatterKgi = 'growth';
+    document.getElementById('scatter-kgi-growth').classList.add('active');
+    document.getElementById('scatter-kgi-hap').classList.remove('active');
+    renderScatter();
+  });
+  document.getElementById('scatter-kgi-hap').addEventListener('click', () => {
+    scatterKgi = 'happiness';
+    document.getElementById('scatter-kgi-hap').classList.add('active');
+    document.getElementById('scatter-kgi-growth').classList.remove('active');
+    renderScatter();
+  });
+  renderScatter();
+}
+
+function renderScatter() {
+  const key = document.getElementById('scatter-factor-select').value;
+  const f = DATA.factors[key];
+  if (!f) return;
+
+  const yKey = scatterKgi === 'growth' ? 'gdp_growth' : 'happiness';
+  const yLabel = scatterKgi === 'growth' ? 'GDP成長率 CAGR (1999-2019)' : '幸福（Positive affect）';
+  const corrVal = scatterKgi === 'growth' ? f.corr_growth : f.corr_happiness;
+
+  // データ収集
+  const pts = [];
+  COUNTRIES.forEach(c => {
+    const country = DATA.countries[c.id];
+    if (!country) return;
+    const x = f.country_scores[c.id];
+    const y = country[yKey];
+    if (x === null || x === undefined || y === null || y === undefined) return;
+    pts.push({ id: c.id, name: c.name, x, y });
+  });
+
+  const wrap = document.getElementById('scatter-wrap');
+  const W = Math.max(wrap.clientWidth, 500) - 0;
+  const H = 420;
+  const margin = { top: 30, right: 40, bottom: 60, left: 70 };
+  const iW = W - margin.left - margin.right;
+  const iH = H - margin.top - margin.bottom;
+
+  const xExt = d3.extent(pts, d => d.x);
+  const yExt = d3.extent(pts, d => d.y);
+  const xPad = (xExt[1] - xExt[0]) * 0.08;
+  const yPad = (yExt[1] - yExt[0]) * 0.08;
+
+  const xScale = d3.scaleLinear().domain([xExt[0]-xPad, xExt[1]+xPad]).range([0, iW]);
+  const yScale = d3.scaleLinear().domain([yExt[0]-yPad, yExt[1]+yPad]).range([iH, 0]);
+
+  const svg = d3.select('#scatter-svg')
+    .attr('width', W).attr('height', H)
+    .attr('style', 'display:block');
+
+  svg.selectAll('*').remove();
+  const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  // Grid
+  g.selectAll('.gx').data(xScale.ticks(6)).join('line')
+    .attr('class','grid-line').attr('x1',d=>xScale(d)).attr('x2',d=>xScale(d))
+    .attr('y1',0).attr('y2',iH).attr('stroke','var(--border)');
+  g.selectAll('.gy').data(yScale.ticks(6)).join('line')
+    .attr('class','grid-line').attr('x1',0).attr('x2',iW)
+    .attr('y1',d=>yScale(d)).attr('y2',d=>yScale(d)).attr('stroke','var(--border)');
+
+  // Trend line
+  const meanX = d3.mean(pts, d => d.x);
+  const meanY = d3.mean(pts, d => d.y);
+  const num = d3.sum(pts, d => (d.x-meanX)*(d.y-meanY));
+  const den = d3.sum(pts, d => (d.x-meanX)**2);
+  if (den !== 0) {
+    const slope = num/den, intercept = meanY - slope*meanX;
+    const x1 = xExt[0]-xPad, x2 = xExt[1]+xPad;
+    g.append('line')
+      .attr('x1',xScale(x1)).attr('x2',xScale(x2))
+      .attr('y1',yScale(slope*x1+intercept)).attr('y2',yScale(slope*x2+intercept))
+      .attr('stroke','rgba(255,255,255,.15)').attr('stroke-width',1.5)
+      .attr('stroke-dasharray','4,4');
+  }
+
+  // Dots
+  const tooltip = document.getElementById('scatter-tooltip');
+  g.selectAll('.dot').data(pts).join('circle')
+    .attr('class', d => 'dot' + (d.id==='JPN' ? ' dot-jpn' : ''))
+    .attr('cx', d => xScale(d.x)).attr('cy', d => yScale(d.y))
+    .attr('r', d => d.id==='JPN' ? 7 : 5)
+    .attr('fill', d => d.id==='JPN' ? 'var(--accent)' : 'var(--accent2)')
+    .attr('fill-opacity', d => d.id==='JPN' ? 1 : 0.7)
+    .attr('stroke', d => d.id==='JPN' ? '#fff' : 'transparent')
+    .attr('stroke-width', 2)
+    .on('mousemove', (event, d) => {
+      tooltip.classList.remove('tooltip-hidden');
+      tooltip.innerHTML = `<strong>${FLAGS[d.id]||''} ${d.name}</strong><br>
+        ${f.label}: ${fmtScore(d.x)}<br>
+        ${yLabel.split('(')[0].trim()}: ${d.y.toFixed(4)}`;
+      const rect = wrap.getBoundingClientRect();
+      tooltip.style.left = (event.clientX - rect.left + 14) + 'px';
+      tooltip.style.top  = (event.clientY - rect.top  - 20) + 'px';
+    })
+    .on('mouseleave', () => tooltip.classList.add('tooltip-hidden'));
+
+  // Labels (JPN + notable)
+  pts.filter(d => d.id==='JPN').forEach(d => {
+    g.append('text').attr('x', xScale(d.x)+10).attr('y', yScale(d.y)+4)
+      .text(`${FLAGS[d.id]} JPN`).attr('fill','var(--accent)').attr('font-size','11px');
+  });
+
+  // Axes
+  g.append('g').attr('transform',`translate(0,${iH})`)
+    .call(d3.axisBottom(xScale).ticks(6))
+    .call(a => a.select('.domain').remove())
+    .call(a => a.selectAll('text').attr('fill','var(--muted)').attr('font-size','10px'))
+    .call(a => a.selectAll('.tick line').attr('stroke','var(--border)'));
+
+  g.append('g').call(d3.axisLeft(yScale).ticks(6))
+    .call(a => a.select('.domain').remove())
+    .call(a => a.selectAll('text').attr('fill','var(--muted)').attr('font-size','10px'))
+    .call(a => a.selectAll('.tick line').attr('stroke','var(--border)'));
+
+  // Axis labels
+  g.append('text').attr('x', iW/2).attr('y', iH+48)
+    .attr('text-anchor','middle').attr('fill','var(--muted)').attr('font-size','11px')
+    .text(f.label);
+
+  g.append('text').attr('transform','rotate(-90)')
+    .attr('x',-iH/2).attr('y',-54)
+    .attr('text-anchor','middle').attr('fill','var(--muted)').attr('font-size','11px')
+    .text(yLabel);
+
+  // Corr badge
+  g.append('text').attr('x', iW - 4).attr('y', 14)
+    .attr('text-anchor','end').attr('fill', corrColor(corrVal)).attr('font-size','12px').attr('font-weight','700')
+    .text(`r = ${fmtCorr(corrVal)}`);
+}
+
+// ====================================================
+// VIEW: factor-country-rank
+// ====================================================
+let crSort = 'desc';
+
+function initFactorCountryRank() {
+  const sel = document.getElementById('cr-factor-select');
+  buildFactorSelect(sel, 'GL_Employ Engagement_2023');
+  sel.addEventListener('change', renderCountryRank);
+  document.getElementById('cr-sort-desc').addEventListener('click', () => {
+    crSort='desc';
+    document.getElementById('cr-sort-desc').classList.add('active');
+    document.getElementById('cr-sort-asc').classList.remove('active');
+    renderCountryRank();
+  });
+  document.getElementById('cr-sort-asc').addEventListener('click', () => {
+    crSort='asc';
+    document.getElementById('cr-sort-asc').classList.add('active');
+    document.getElementById('cr-sort-desc').classList.remove('active');
+    renderCountryRank();
+  });
+  renderCountryRank();
+}
+
+function renderCountryRank() {
+  const key = document.getElementById('cr-factor-select').value;
+  const f = DATA.factors[key];
+  if (!f) return;
+
+  const rows = Object.entries(f.country_scores)
+    .map(([id, score]) => ({
+      id, score,
+      name: DATA.countries[id]?.name || id,
+      deviation: f.deviation_scores?.[id]
+    }))
+    .filter(r => r.score !== null && r.score !== undefined)
+    .sort((a,b) => crSort==='desc' ? b.score-a.score : a.score-b.score);
+
+  const maxScore = Math.max(...rows.map(r => Math.abs(r.score)));
+
+  document.getElementById('cr-result').innerHTML = `
+    <div class="card">
+      <div class="card-title">${f.label} — 国別スコア（${rows.length}カ国）</div>
+      <table class="rank-table">
+        <thead><tr>
+          <th>#</th><th></th><th>国</th>
+          <th style="text-align:right">スコア</th>
+          <th style="text-align:right">偏差値</th>
+          <th class="rank-bar-cell">バー</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map((r,i) => `
+            <tr class="${r.id==='JPN'?'row-jpn':''}">
+              <td class="rank-num">${i+1}</td>
+              <td class="flag-cell">${FLAGS[r.id]||''}</td>
+              <td class="country-name">${r.name} <span style="color:var(--muted);font-size:11px">${r.id}</span></td>
+              <td class="score-val">${fmtScore(r.score)}</td>
+              <td class="deviation-val" style="color:${deviationColor(r.deviation)}">
+                ${r.deviation !== null && r.deviation !== undefined ? r.deviation.toFixed(1) : '—'}
+              </td>
+              <td class="rank-bar-cell">
+                <div class="rank-bar-bg">
+                  <div class="rank-bar ${r.score >= 0 ? 'bar-pos' : 'bar-neg'}"
+                    style="width:${Math.abs(r.score)/maxScore*100}%"></div>
+                </div>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+// ====================================================
+// VIEW: country-profile
+// ====================================================
+let profileMode = 'top';
+
+function initCountryProfile() {
+  const sel = document.getElementById('profile-country-select');
+  buildCountrySelect(sel, 'JPN');
+  sel.addEventListener('change', renderProfile);
+  document.getElementById('profile-top').addEventListener('click', () => {
+    profileMode='top';
+    document.getElementById('profile-top').classList.add('active');
+    document.getElementById('profile-bottom').classList.remove('active');
+    renderProfile();
+  });
+  document.getElementById('profile-bottom').addEventListener('click', () => {
+    profileMode='bottom';
+    document.getElementById('profile-bottom').classList.add('active');
+    document.getElementById('profile-top').classList.remove('active');
+    renderProfile();
+  });
+  renderProfile();
+}
+
+function renderProfile() {
+  const id = document.getElementById('profile-country-select').value;
+  const country = DATA.countries[id];
+  if (!country) return;
+
+  const factors = Object.entries(country.factor_scores)
+    .filter(([,v]) => v.deviation !== null && v.deviation !== undefined)
+    .sort(([,a],[,b]) => profileMode==='top' ? b.deviation-a.deviation : a.deviation-b.deviation)
+    .slice(0, 20);
+
+  document.getElementById('profile-result').innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;gap:24px;align-items:center">
+        <span style="font-size:40px">${FLAGS[id]||'🌐'}</span>
+        <div>
+          <div style="font-size:20px;font-weight:700">${country.name}</div>
+          <div style="color:var(--muted);font-size:12px;margin-top:4px">
+            GDP成長率: <span class="${corrClass(country.gdp_growth)}" style="font-weight:600">
+              ${country.gdp_growth !== null ? (country.gdp_growth*100).toFixed(2)+'%/yr' : '—'}</span>
+            &nbsp;&nbsp;幸福スコア: <span style="color:var(--accent2);font-weight:600">
+              ${country.happiness !== null ? country.happiness.toFixed(3) : '—'}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">${profileMode==='top' ? '🏆 トップ因子（偏差値高い順）' : '⚠️ ワースト因子（偏差値低い順）'} — Top 20</div>
+      <table class="rank-table">
+        <thead><tr>
+          <th>#</th><th>因子</th><th>カテゴリ</th>
+          <th style="text-align:right">スコア</th>
+          <th style="text-align:right">偏差値</th>
+        </tr></thead>
+        <tbody>
+          ${factors.map(([fname, fv], i) => `
+            <tr>
+              <td class="rank-num">${i+1}</td>
+              <td>${fv.label || fname}</td>
+              <td style="color:var(--muted);font-size:11px">${fv.category||''}</td>
+              <td class="score-val">${fmtScore(fv.score)}</td>
+              <td class="deviation-val" style="color:${deviationColor(fv.deviation)}">
+                ${fv.deviation !== null && fv.deviation !== undefined ? fv.deviation.toFixed(1) : '—'}
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+// ====================================================
+// VIEW: country-compare
+// ====================================================
+function initCountryCompare() {
+  const sel1 = document.getElementById('cmp-country1');
+  const sel2 = document.getElementById('cmp-country2');
+  buildCountrySelect(sel1, 'JPN');
+  buildCountrySelect(sel2, 'USA');
+  sel1.addEventListener('change', renderCompare);
+  sel2.addEventListener('change', renderCompare);
+  renderCompare();
+}
+
+function renderCompare() {
+  const id1 = document.getElementById('cmp-country1').value;
+  const id2 = document.getElementById('cmp-country2').value;
+  const c1 = DATA.countries[id1];
+  const c2 = DATA.countries[id2];
+  if (!c1 || !c2) return;
+
+  // 両国にデータがある因子
+  const commonFactors = FACTORS.filter(f => {
+    const s1 = c1.factor_scores[f.key];
+    const s2 = c2.factor_scores[f.key];
+    return s1?.score !== null && s1?.score !== undefined && s2?.score !== null && s2?.score !== undefined;
+  });
+
+  // 偏差値差で並び替え（id1が高い順）
+  const ranked = commonFactors.map(f => ({
+    ...f,
+    d1: c1.factor_scores[f.key].deviation,
+    d2: c2.factor_scores[f.key].deviation,
+    s1: c1.factor_scores[f.key].score,
+    s2: c2.factor_scores[f.key].score,
+    diff: (c1.factor_scores[f.key].deviation||50) - (c2.factor_scores[f.key].deviation||50)
+  })).sort((a,b) => b.diff - a.diff);
+
+  const maxDev = 100;
+
+  const renderRows = (items) => items.map(f => {
+    const w1 = Math.max(0, (f.d1||50) / maxDev * 100);
+    const w2 = Math.max(0, (f.d2||50) / maxDev * 100);
+    return `
+      <div class="compare-row">
+        <span class="cf-label">${f.label}</span>
+        <div>
+          <div class="compare-bar-wrap">
+            <div class="compare-bar" style="width:${w1}%;background:${deviationColor(f.d1)}"></div>
+          </div>
+          <div style="font-size:10px;color:var(--muted);text-align:right;margin-top:2px">${f.d1!==null&&f.d1!==undefined?f.d1.toFixed(1):'—'}</div>
+        </div>
+        <div>
+          <div class="compare-bar-wrap">
+            <div class="compare-bar" style="width:${w2}%;background:${deviationColor(f.d2)}"></div>
+          </div>
+          <div style="font-size:10px;color:var(--muted);text-align:right;margin-top:2px">${f.d2!==null&&f.d2!==undefined?f.d2.toFixed(1):'—'}</div>
+        </div>
+        <div style="font-size:11px;color:${f.diff>5?'var(--pos)':f.diff<-5?'var(--neg)':'var(--muted)'}">
+          ${f.diff > 0 ? '▲' : '▼'} ${Math.abs(f.diff).toFixed(1)}pt
+        </div>
+      </div>`;
+  }).join('');
+
+  document.getElementById('cmp-result').innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div style="text-align:center">
+          <div style="font-size:36px">${FLAGS[id1]||'🌐'}</div>
+          <div style="font-weight:700;margin-top:4px">${c1.name}</div>
+          <div style="font-size:11px;color:var(--muted)">GDP成長: ${c1.gdp_growth!==null?(c1.gdp_growth*100).toFixed(2)+'%':'—'}</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:36px">${FLAGS[id2]||'🌐'}</div>
+          <div style="font-weight:700;margin-top:4px">${c2.name}</div>
+          <div style="font-size:11px;color:var(--muted)">GDP成長: ${c2.gdp_growth!==null?(c2.gdp_growth*100).toFixed(2)+'%':'—'}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">${FLAGS[id1]} ${c1.name} が優位な因子（Top 15）</div>
+      <div class="compare-row header">
+        <span></span>
+        <span>${id1}</span><span>${id2}</span><span>差</span>
+      </div>
+      ${renderRows(ranked.slice(0,15))}
+    </div>
+
+    <div class="card">
+      <div class="card-title">${FLAGS[id2]} ${c2.name} が優位な因子（Top 15）</div>
+      <div class="compare-row header">
+        <span></span>
+        <span>${id1}</span><span>${id2}</span><span>差</span>
+      </div>
+      ${renderRows([...ranked].reverse().slice(0,15))}
+    </div>`;
+}
+
+// ====================================================
+// VIEW: World Effect Benchmark
+// ====================================================
+let wefMode = 'selected';
+
+function initWorldEffect() {
+  document.getElementById('wef-mode-selected').addEventListener('click', () => {
+    wefMode='selected';
+    document.getElementById('wef-mode-selected').classList.add('active');
+    document.getElementById('wef-mode-all').classList.remove('active');
+    renderWorldEffect();
+  });
+  document.getElementById('wef-mode-all').addEventListener('click', () => {
+    wefMode='all';
+    document.getElementById('wef-mode-all').classList.add('active');
+    document.getElementById('wef-mode-selected').classList.remove('active');
+    renderWorldEffect();
+  });
+
+  // ハイライト選択
+  const hsel = document.getElementById('wef-highlight-select');
+  FACTORS.forEach(f => {
+    const o = document.createElement('option');
+    o.value = f.key; o.textContent = f.label;
+    hsel.appendChild(o);
+  });
+  hsel.addEventListener('change', renderWorldEffect);
+  renderWorldEffect();
+}
+
+function renderWorldEffect() {
+  const highlightKey = document.getElementById('wef-highlight-select').value;
+  const tooltip = document.getElementById('wef-tooltip');
+
+  // データソース
+  let pts;
+  if (wefMode === 'selected') {
+    pts = FACTORS
+      .filter(f => f.corr_growth !== null && f.corr_happiness !== null)
+      .map(f => ({ key: f.key, label: f.label, x: f.corr_happiness, y: f.corr_growth }));
+  } else {
+    pts = Object.entries(DATA.all_factors_corr)
+      .filter(([,v]) => v.corr_growth !== null && v.corr_happiness !== null)
+      .map(([key, v]) => ({
+        key,
+        label: DATA.factors[key]?.label || key,
+        x: v.corr_happiness,
+        y: v.corr_growth,
+        selected: !!DATA.factors[key]
+      }));
+  }
+
+  const wrap = document.querySelector('.chart-wrap');
+  const W = Math.max(wrap.clientWidth, 600);
+  const H = 520;
+  const margin = { top: 40, right: 40, bottom: 60, left: 60 };
+  const iW = W - margin.left - margin.right;
+  const iH = H - margin.top - margin.bottom;
+
+  const xScale = d3.scaleLinear().domain([-0.8, 0.8]).range([0, iW]);
+  const yScale = d3.scaleLinear().domain([-0.7, 0.7]).range([iH, 0]);
+
+  const svg = d3.select('#wef-svg')
+    .attr('width', W).attr('height', H)
+    .attr('style', 'display:block');
+  svg.selectAll('*').remove();
+
+  const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  // Quadrant backgrounds
+  const qColors = [
+    { x1:xScale(0), x2:iW,     y1:0,         y2:yScale(0), fill:'rgba(93,214,168,.04)', label:'SUCCESS', lx:iW-8, ly:12, anchor:'end' },
+    { x1:0,         x2:xScale(0), y1:0,       y2:yScale(0), fill:'rgba(74,158,255,.03)', label:'SPARTA',  lx:8,    ly:12, anchor:'start' },
+    { x1:xScale(0), x2:iW,     y1:yScale(0), y2:iH,         fill:'rgba(255,107,107,.03)', label:'SPOIL', lx:iW-8, ly:iH-8, anchor:'end' },
+    { x1:0,         x2:xScale(0), y1:yScale(0), y2:iH,       fill:'rgba(128,128,128,.03)', label:'SLIGHT', lx:8, ly:iH-8, anchor:'start' },
+  ];
+  qColors.forEach(q => {
+    g.append('rect').attr('x',q.x1).attr('y',q.y1).attr('width',q.x2-q.x1).attr('height',q.y2-q.y1).attr('fill',q.fill);
+    g.append('text').attr('x',q.lx).attr('y',q.ly).attr('text-anchor',q.anchor)
+      .attr('fill','rgba(255,255,255,.12)').attr('font-size','13px').attr('font-style','italic').text(q.label);
+  });
+
+  // Axes (cross lines)
+  g.append('line').attr('x1',xScale(0)).attr('x2',xScale(0)).attr('y1',0).attr('y2',iH)
+    .attr('stroke','rgba(255,255,255,.15)').attr('stroke-width',1);
+  g.append('line').attr('x1',0).attr('x2',iW).attr('y1',yScale(0)).attr('y2',yScale(0))
+    .attr('stroke','rgba(255,255,255,.15)').attr('stroke-width',1);
+
+  // Grid
+  [-0.6,-0.4,-0.2,0.2,0.4,0.6].forEach(v => {
+    g.append('line').attr('x1',xScale(v)).attr('x2',xScale(v)).attr('y1',0).attr('y2',iH)
+      .attr('stroke','var(--border)').attr('stroke-width',1);
+    g.append('line').attr('x1',0).attr('x2',iW).attr('y1',yScale(v)).attr('y2',yScale(v))
+      .attr('stroke','var(--border)').attr('stroke-width',1);
+  });
+
+  // Dots
+  pts.forEach(pt => {
+    const isHL = pt.key === highlightKey;
+    const isSelected = wefMode==='selected' || pt.selected;
+
+    let fill, opacity, r;
+    if (isHL) {
+      fill = 'var(--accent)'; opacity = 1; r = 9;
+    } else if (isSelected) {
+      // 象限で色分け
+      const x = pt.x, y = pt.y;
+      if (x >= 0.2 && y >= 0.2) fill = 'var(--pos)';
+      else if (x <= -0.2 && y >= 0.2) fill = 'var(--accent2)';
+      else if (x >= 0.2 && y <= -0.2) fill = 'var(--neg)';
+      else if (x <= -0.2 && y <= -0.2) fill = '#666';
+      else fill = 'var(--muted)';
+      opacity = 0.8; r = 6;
+    } else {
+      fill = 'rgba(255,255,255,.25)'; opacity = 0.4; r = 3;
+    }
+
+    const circle = g.append('circle')
+      .attr('class','wef-dot')
+      .attr('cx', xScale(pt.x)).attr('cy', yScale(pt.y))
+      .attr('r', r).attr('fill', fill).attr('fill-opacity', opacity);
+
+    if (isSelected || isHL) {
+      circle.on('mousemove', (event) => {
+        tooltip.classList.remove('tooltip-hidden');
+        tooltip.innerHTML = `
+          <strong>${pt.label}</strong><br>
+          成長相関: <span style="color:${corrColor(pt.y)}">${fmtCorr(pt.y)}</span><br>
+          幸福相関: <span style="color:${corrColor(pt.x)}">${fmtCorr(pt.x)}</span>`;
+        const rect = wrap.getBoundingClientRect();
+        tooltip.style.left = (event.clientX - rect.left + 14) + 'px';
+        tooltip.style.top  = (event.clientY - rect.top  - 20) + 'px';
+      }).on('mouseleave', () => tooltip.classList.add('tooltip-hidden'));
+    }
+
+    // Label (selected mode or highlighted)
+    if (wefMode==='selected' || isHL) {
+      g.append('text').attr('x', xScale(pt.x)+r+2).attr('y', yScale(pt.y)+4)
+        .attr('fill', isHL ? 'var(--accent)' : 'rgba(255,255,255,.6)')
+        .attr('font-size', isHL ? '12px' : '9px')
+        .attr('font-weight', isHL ? '700' : '400')
+        .text(pt.label);
+    }
+  });
+
+  // Axes labels
+  g.append('text').attr('x', iW/2).attr('y', iH+46)
+    .attr('text-anchor','middle').attr('fill','var(--muted)').attr('font-size','11px')
+    .text('← 幸福との相関 →');
+
+  g.append('text').attr('transform','rotate(-90)')
+    .attr('x',-iH/2).attr('y',-44)
+    .attr('text-anchor','middle').attr('fill','var(--muted)').attr('font-size','11px')
+    .text('← 成長との相関 →');
+
+  // Tick labels
+  g.append('g').attr('transform',`translate(0,${iH})`)
+    .call(d3.axisBottom(xScale).tickValues([-0.6,-0.4,-0.2,0,0.2,0.4,0.6]).tickFormat(d=>d===0?'0':d))
+    .call(a => a.select('.domain').remove())
+    .call(a => a.selectAll('text').attr('fill','var(--muted)').attr('font-size','10px'))
+    .call(a => a.selectAll('.tick line').remove());
+
+  g.append('g')
+    .call(d3.axisLeft(yScale).tickValues([-0.6,-0.4,-0.2,0,0.2,0.4,0.6]).tickFormat(d=>d===0?'0':d))
+    .call(a => a.select('.domain').remove())
+    .call(a => a.selectAll('text').attr('fill','var(--muted)').attr('font-size','10px'))
+    .call(a => a.selectAll('.tick line').remove());
+}
+
+// ====================================================
+// INIT ALL
+// ====================================================
+function initAll() {
+  initFactorKgi();
+  initFactorRank();
+  initFactorScatter();
+  initFactorCountryRank();
+  initCountryProfile();
+  initCountryCompare();
+  initWorldEffect();
+}
+
+loadData();
+</script>
+</body>
+</html>

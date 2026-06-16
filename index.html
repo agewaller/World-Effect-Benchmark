@@ -584,34 +584,58 @@ function renderFactorRank(){
   const key = CURRENT_FACTOR_KEY;
   const f = DATA.factors[key]; if(!f) return;
   const n = parseInt(document.getElementById('rank-n-select').value);
-  const similar = ALL_FACTORS
-    .filter(ff=>ff.key!==key&&ff.corr_growth!=null&&ff.corr_happiness!=null)
-    .map(ff=>({...ff, sim:Math.abs((ff.corr_growth||0)-(f.corr_growth||0))+Math.abs((ff.corr_happiness||0)-(f.corr_happiness||0))}))
-    .sort((a,b)=>a.sim-b.sim);
+
+  // 因子間相関データ（top/bottom50）
+  const topCorr = DATA.factor_top_corr?.[key];
+
+  // inter_corrがある場合: top/bottomをそのまま使う
+  // ない場合: 成長・幸福パターン類似度でフォールバック
+  let posRows, negRows;
+
+  if(topCorr) {
+    // 正相関が高い順（top）
+    posRows = topCorr.top.slice(0, n).map(([ k, r ], i) => {
+      const ff = DATA.factors[k]; if(!ff) return null;
+      return { i, key:k, label:ff.label, selected:ff.selected, r, cg:ff.corr_growth, ch:ff.corr_happiness };
+    }).filter(Boolean);
+    // 負相関が高い順（bottom → 絶対値で負）
+    negRows = topCorr.bottom.slice(0, n).map(([ k, r ], i) => {
+      const ff = DATA.factors[k]; if(!ff) return null;
+      return { i, key:k, label:ff.label, selected:ff.selected, r, cg:ff.corr_growth, ch:ff.corr_happiness };
+    }).filter(Boolean);
+  } else {
+    // フォールバック: 成長・幸福相関パターン類似度
+    const similar = ALL_FACTORS
+      .filter(ff=>ff.key!==key&&ff.corr_growth!=null&&ff.corr_happiness!=null)
+      .map(ff=>({...ff, r:null, sim:Math.abs((ff.corr_growth||0)-(f.corr_growth||0))+Math.abs((ff.corr_happiness||0)-(f.corr_happiness||0))}))
+      .sort((a,b)=>a.sim-b.sim);
+    posRows = similar.slice(0,n).map((ff,i)=>({i,key:ff.key,label:ff.label,selected:ff.selected,r:null,cg:ff.corr_growth,ch:ff.corr_happiness}));
+    negRows = similar.slice(-n).reverse().map((ff,i)=>({i,key:ff.key,label:ff.label,selected:ff.selected,r:null,cg:ff.corr_growth,ch:ff.corr_happiness}));
+  }
+
+  const rHeader = topCorr ? `との r` : '成長r';
+  const renderRow = (row, i) => `<tr>
+    <td class="rank-num">${i+1}</td>
+    <td>${row.label}${row.selected?'<span class="badge-selected">選抜</span>':''}</td>
+    <td class="${corrClass(row.r)}" style="font-weight:700">${row.r!=null?fmtCorr(row.r):'—'}</td>
+    <td class="${corrClass(row.cg)}">${fmtCorr(row.cg)}</td>
+    <td class="${corrClass(row.ch)}">${fmtCorr(row.ch)}</td>
+  </tr>`;
+
   document.getElementById('rank-result').innerHTML=`
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
       <div class="card">
-        <div class="card-title">✅ 類似パターン（Top ${n}）</div>
-        <p style="font-size:11px;color:var(--muted);margin-bottom:10px"><strong style="color:var(--accent)">${f.label}</strong> と成長・幸福相関が近い因子</p>
-        <table class="rank-table"><thead><tr><th>#</th><th>因子</th><th>成長r</th><th>幸福r</th></tr></thead><tbody>
-          ${similar.slice(0,n).map((ff,i)=>`<tr>
-            <td class="rank-num">${i+1}</td>
-            <td>${ff.label}${ff.selected?'<span class="badge-selected">選抜</span>':''}</td>
-            <td class="${corrClass(ff.corr_growth)}">${fmtCorr(ff.corr_growth)}</td>
-            <td class="${corrClass(ff.corr_happiness)}">${fmtCorr(ff.corr_happiness)}</td>
-          </tr>`).join('')}
+        <div class="card-title">🔵 正の相関が強い因子（Top ${n}）</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:10px"><strong style="color:var(--accent)">${f.label}</strong> と正の相関が強い因子</p>
+        <table class="rank-table"><thead><tr><th>#</th><th>因子</th><th style="color:var(--accent)">${f.label.length>6?f.label.slice(0,6)+'…':f.label} r</th><th>成長r</th><th>幸福r</th></tr></thead><tbody>
+          ${posRows.map((row,i)=>renderRow(row,i)).join('')}
         </tbody></table>
       </div>
       <div class="card">
-        <div class="card-title">🔴 逆パターン（Bottom ${n}）</div>
-        <p style="font-size:11px;color:var(--muted);margin-bottom:10px"><strong style="color:var(--neg)">${f.label}</strong> と反対の効果を持つ因子</p>
-        <table class="rank-table"><thead><tr><th>#</th><th>因子</th><th>成長r</th><th>幸福r</th></tr></thead><tbody>
-          ${similar.slice(-n).reverse().map((ff,i)=>`<tr>
-            <td class="rank-num">${i+1}</td>
-            <td>${ff.label}${ff.selected?'<span class="badge-selected">選抜</span>':''}</td>
-            <td class="${corrClass(ff.corr_growth)}">${fmtCorr(ff.corr_growth)}</td>
-            <td class="${corrClass(ff.corr_happiness)}">${fmtCorr(ff.corr_happiness)}</td>
-          </tr>`).join('')}
+        <div class="card-title">🔴 負の相関が強い因子（Bottom ${n}）</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:10px"><strong style="color:var(--neg)">${f.label}</strong> と負の相関が強い因子</p>
+        <table class="rank-table"><thead><tr><th>#</th><th>因子</th><th style="color:var(--accent)">${f.label.length>6?f.label.slice(0,6)+'…':f.label} r</th><th>成長r</th><th>幸福r</th></tr></thead><tbody>
+          ${negRows.map((row,i)=>renderRow(row,i)).join('')}
         </tbody></table>
       </div>
     </div>`;

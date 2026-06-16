@@ -521,20 +521,29 @@ const SEARCH_SYNONYMS = {
   'カルチャー': ['文化', 'culture', '芸術', '価値観'],
 };
 
-// カタカナ→ひらがな変換（ゆらぎ対応）
+// カタカナ→ひらがな変換
 function kata2hira(str) {
-  return str.replace(/[\u30A1-\u30F6]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
+  let r = '';
+  for(let i=0;i<str.length;i++){
+    const c = str.charCodeAt(i);
+    r += (c >= 0x30A1 && c <= 0x30F6) ? String.fromCharCode(c - 0x60) : str[i];
+  }
+  return r;
 }
 
 // クエリを展開（同義語・ひらがな正規化）
 function expandQuery(q) {
-  const terms = new Set([q]);
-  const h = kata2hira(q);
-  if(h !== q) terms.add(h);
-  // 辞書引き（カタカナ・ひらがな両方でチェック）
-  for(const [key, syns] of Object.entries(SEARCH_SYNONYMS)) {
-    if(kata2hira(key.toLowerCase()) === h || key.toLowerCase() === q) {
-      syns.forEach(s => terms.add(s.toLowerCase()));
+  const terms = new Set();
+  terms.add(q);
+  const qH = kata2hira(q);   // クエリのひらがな版
+  if(qH !== q) terms.add(qH);
+
+  // 辞書を全走査して一致するキーを探す
+  for(const [dictKey, syns] of Object.entries(SEARCH_SYNONYMS)) {
+    const dkH = kata2hira(dictKey);  // 辞書キーのひらがな版
+    // ひらがな同士で比較（大文字小文字も統一）
+    if(dkH.toLowerCase() === qH.toLowerCase() || dictKey.toLowerCase() === q.toLowerCase()) {
+      syns.forEach(s => { terms.add(s); terms.add(s.toLowerCase()); });
     }
   }
   return [...terms];
@@ -587,6 +596,12 @@ function matchedKw(f, q) {
 
 function renderFselDropdown(){
   const q = document.getElementById('fsel-input').value.trim().toLowerCase();
+  if(q) {
+    const terms = expandQuery(q);
+    const pool0 = searchPool(ALL_FACTORS, q);
+    console.log('[検索]', q, '→ 展開語:', terms, '/ ヒット:', pool0.length);
+    if(pool0.length > 0) console.log('top3:', pool0.slice(0,3).map(f=>f.label+'('+f._score+')'));
+  }
   const pool = searchPool(ALL_FACTORS, q).slice(0, 40);
   document.getElementById('fsel-drop-list').innerHTML = pool.map(f=>{
     const hit = matchedKw(f, q);

@@ -473,22 +473,57 @@ function toggleFselDropdown(){
   }
 }
 
+function scoreMatch(f, q) {
+  if(!q) return 1;
+  const label = f.label.toLowerCase();
+  const key   = f.key.toLowerCase();
+  const cat   = (f.category||'').toLowerCase();
+  if(label === q)          return 100;
+  if(label.startsWith(q)) return 80;
+  if(label.includes(q))   return 60;
+  if(key.includes(q))     return 40;
+  if(cat.includes(q))     return 30;
+  const kws = DATA.factors[f.key]?.search_keywords || [];
+  let kwScore = 0;
+  for(const kw of kws) {
+    const k = kw.toLowerCase();
+    if(k === q)           { kwScore = Math.max(kwScore, 55); break; }
+    else if(k.startsWith(q)) { kwScore = Math.max(kwScore, 45); }
+    else if(k.includes(q))   { kwScore = Math.max(kwScore, 35); }
+  }
+  return kwScore;
+}
+
+function searchPool(pool, q) {
+  if(!q) return pool;
+  return pool.map(f=>({...f, _score: scoreMatch(f, q)}))
+             .filter(f=>f._score > 0)
+             .sort((a,b)=>b._score - a._score);
+}
+
+function matchedKw(f, q) {
+  if(!q) return null;
+  const kws = DATA.factors[f.key]?.search_keywords || [];
+  return kws.find(kw => kw.toLowerCase().includes(q.toLowerCase())) || null;
+}
+
 function renderFselDropdown(){
   const q = document.getElementById('fsel-input').value.trim().toLowerCase();
-  let pool = ALL_FACTORS;
-  if(q) pool = pool.filter(f=>f.label.toLowerCase().includes(q)||f.key.toLowerCase().includes(q));
-  pool = pool.slice(0,40);
-  document.getElementById('fsel-drop-list').innerHTML = pool.map(f=>`
-    <div class="fsel-drop-item" onclick="selectFactor('${f.key}')">
-      <div class="di-label">${f.label}${f.selected?'<span class="badge-selected">選抜</span>':''}</div>
+  const pool = searchPool(ALL_FACTORS, q).slice(0, 40);
+  document.getElementById('fsel-drop-list').innerHTML = pool.map(f=>{
+    const hit = matchedKw(f, q);
+    return `<div class="fsel-drop-item" onclick="selectFactor('${f.key}')">
+      <div class="di-label">${f.label}${f.selected?'<span class="badge-selected">選抜</span>':''}
+        ${hit ? `<span style="font-size:10px;color:#e8c840;margin-left:6px">≈ ${hit}</span>` : ''}
+      </div>
       <div class="di-meta">
         <span class="${f.corr_growth>=0.2?'fsel-corr-g':f.corr_growth<=-0.2?'fsel-corr-gn':'fsel-corr-gm'}">成長 ${fmtCorr(f.corr_growth)}</span>
         <span class="${f.corr_happiness>=0.2?'fsel-corr-g':f.corr_happiness<=-0.2?'fsel-corr-gn':'fsel-corr-gm'}">幸福 ${fmtCorr(f.corr_happiness)}</span>
         <span style="color:var(--muted)">${f.category}</span>
       </div>
-    </div>`).join('') || '<div class="empty" style="padding:16px">該当なし</div>';
+    </div>`;
+  }).join('') || '<div class="empty" style="padding:16px">該当なし</div>';
 }
-
 function selectFactor(key){
   CURRENT_FACTOR_KEY = key;
   document.getElementById('fsel-dropdown').classList.remove('open');
@@ -814,19 +849,23 @@ function renderWefDropdown(){
   const q = document.getElementById('wef-search').value.trim().toLowerCase();
   const dd = document.getElementById('wef-dropdown');
   if(!q){ dd.classList.remove('open'); return; }
-  let pool = ALL_FACTORS.filter(f=>f.corr_growth!=null&&f.corr_happiness!=null);
-  pool = pool.filter(f=>f.label.toLowerCase().includes(q)||f.key.toLowerCase().includes(q)).slice(0,30);
-  document.getElementById('wef-drop-list').innerHTML = pool.map(f=>`
-    <div class="fsel-drop-item" onclick="setWefHighlight('${f.key}','${f.label.replace(/'/g,"\\'")}')">
-      <div class="di-label">${f.label}${f.selected?'<span class="badge-selected">選抜</span>':''}</div>
+  const pool = searchPool(
+    ALL_FACTORS.filter(f=>f.corr_growth!=null&&f.corr_happiness!=null), q
+  ).slice(0, 30);
+  document.getElementById('wef-drop-list').innerHTML = pool.map(f=>{
+    const hit = matchedKw(f, q);
+    return `<div class="fsel-drop-item" onclick="setWefHighlight('${f.key}','${f.label.replace(/'/g,"\\'")}')">
+      <div class="di-label">${f.label}${f.selected?'<span class="badge-selected">選抜</span>':''}
+        ${hit ? `<span style="font-size:10px;color:#e8c840;margin-left:6px">≈ ${hit}</span>` : ''}
+      </div>
       <div class="di-meta">
         <span class="${f.corr_growth>=0.2?'fsel-corr-g':f.corr_growth<=-0.2?'fsel-corr-gn':'fsel-corr-gm'}">成長 ${fmtCorr(f.corr_growth)}</span>
         <span class="${f.corr_happiness>=0.2?'fsel-corr-g':f.corr_happiness<=-0.2?'fsel-corr-gn':'fsel-corr-gm'}">幸福 ${fmtCorr(f.corr_happiness)}</span>
       </div>
-    </div>`).join('') || '<div class="empty" style="padding:12px">該当なし</div>';
+    </div>`;
+  }).join('') || '<div class="empty" style="padding:12px">該当なし</div>';
   dd.classList.add('open');
 }
-
 function setWefHighlight(key, label){
   wefHighlightKey = key;
   document.getElementById('wef-search').value = label;

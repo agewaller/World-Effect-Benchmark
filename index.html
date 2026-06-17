@@ -256,7 +256,7 @@
   <div id="sidebar">
     <div id="sidebar-header">
       <div class="logo">社会戦略フォーラム</div>
-      <h1>World Effect<br>Explorer</h1>
+      <h1>World Effect<br>Evaluator <span style="display:inline-block;background:rgba(232,200,64,.15);color:var(--accent);border:1px solid rgba(232,200,64,.3);font-size:9px;padding:1px 6px;border-radius:3px;vertical-align:middle;font-weight:700">β版</span></h1>
       <p>37カ国 × 1180因子</p>
     </div>
     <nav>
@@ -268,7 +268,12 @@
       <div class="nav-section">全体を俯瞰する</div>
       <div class="nav-item" data-view="world-effect"><span class="icon">🗺️</span>World Effect Map</div>
     </nav>
-    <div id="sidebar-footer">分析: <span>OECD加盟・除外なし37カ国</span></div>
+    <div id="sidebar-footer">
+      分析: <span>OECD加盟・除外なし37カ国</span><br>
+      <span style="color:var(--muted);font-size:9px;line-height:1.5;display:block;margin-top:6px">
+        ⚠ 当ツールはAIをベースに作成しており、数値等に誤りが含まれる場合があります
+      </span>
+    </div>
   </div>
 
   <!-- Main -->
@@ -790,6 +795,7 @@ function matchedKw(f, q) {
 }
 
 function renderDropItem(f, hint='') {
+  const jpnDev = DATA.factors[f.key]?.deviation_scores?.JPN;
   return `<div class="fsel-drop-item" onclick="selectFactor('${f.key}')">
     <div class="di-label">${f.label}${f.selected?'<span class="badge-selected">選抜</span>':''}
       ${hint ? `<span style="font-size:10px;color:#e8c840;margin-left:6px">${hint}</span>` : ''}
@@ -797,6 +803,7 @@ function renderDropItem(f, hint='') {
     <div class="di-meta">
       <span class="${(f.corr_growth||0)>=0.2?'fsel-corr-g':(f.corr_growth||0)<=-0.2?'fsel-corr-gn':'fsel-corr-gm'}">成長 ${fmtCorr(f.corr_growth)}</span>
       <span class="${(f.corr_happiness||0)>=0.2?'fsel-corr-g':(f.corr_happiness||0)<=-0.2?'fsel-corr-gn':'fsel-corr-gm'}">幸福 ${fmtCorr(f.corr_happiness)}</span>
+      <span style="color:${devColor(jpnDev)}">JP偏差値 ${jpnDev!=null?jpnDev.toFixed(1):'—'}</span>
       <span style="color:var(--muted)">${f.category}</span>
     </div>
   </div>`;
@@ -1202,6 +1209,7 @@ function renderWefDropdown(){
   ).slice(0, 30);
   document.getElementById('wef-drop-list').innerHTML = pool.map(f=>{
     const hit = matchedKw(f, q);
+    const jpnDev = DATA.factors[f.key]?.deviation_scores?.JPN;
     return `<div class="fsel-drop-item" onclick="setWefHighlight('${f.key}','${f.label.replace(/'/g,"\\'")}')">
       <div class="di-label">${f.label}${f.selected?'<span class="badge-selected">選抜</span>':''}
         ${hit ? `<span style="font-size:10px;color:#e8c840;margin-left:6px">≈ ${hit}</span>` : ''}
@@ -1209,6 +1217,7 @@ function renderWefDropdown(){
       <div class="di-meta">
         <span class="${f.corr_growth>=0.2?'fsel-corr-g':f.corr_growth<=-0.2?'fsel-corr-gn':'fsel-corr-gm'}">成長 ${fmtCorr(f.corr_growth)}</span>
         <span class="${f.corr_happiness>=0.2?'fsel-corr-g':f.corr_happiness<=-0.2?'fsel-corr-gn':'fsel-corr-gm'}">幸福 ${fmtCorr(f.corr_happiness)}</span>
+        <span style="color:${devColor(jpnDev)}">JP偏差値 ${jpnDev!=null?jpnDev.toFixed(1):'—'}</span>
       </div>
     </div>`;
   }).join('') || '<div class="empty" style="padding:12px">該当なし</div>';

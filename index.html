@@ -143,8 +143,8 @@
   .wef-search-wrap{position:relative;max-width:320px;flex:1}
   .wef-search-wrap input{width:100%;padding-left:32px;background:var(--panel);border:1px solid var(--border);color:var(--text);padding:7px 11px 7px 32px;border-radius:var(--r);font-size:13px;font-family:inherit;outline:none}
   .wef-search-wrap input:focus{border-color:var(--accent2)}
-  #wef-dropdown{position:absolute;top:100%;left:0;right:0;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:0 8px 24px rgba(0,0,0,.5);max-height:260px;overflow-y:auto;display:none;margin-top:4px}
-  #wef-dropdown.open{display:block}
+  #wef-dropdown, #scatter-yfactor-dropdown{position:absolute;top:100%;left:0;right:0;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:0 8px 24px rgba(0,0,0,.5);max-height:260px;overflow-y:auto;display:none;margin-top:4px}
+  #wef-dropdown.open, #scatter-yfactor-dropdown.open{display:block}
 
 /* ============================================================
    RESPONSIVE / MOBILE
@@ -235,7 +235,7 @@
   #scatter-svg, #wef-svg { min-width: 500px; }
 
   /* ドロップダウン */
-  #fsel-dropdown, #wef-dropdown { position: fixed; left: 14px; right: 14px; top: auto; max-height: 55vh; }
+  #fsel-dropdown, #wef-dropdown, #scatter-yfactor-dropdown { position: fixed; left: 14px; right: 14px; top: auto; max-height: 55vh; }
 
   /* 国プロフィールの国情報 */
   #profile-result .card > div[style*="flex"] { flex-direction: column; gap: 10px; }
@@ -325,7 +325,7 @@
         <div class="sub-tabs">
           <div class="sub-tab active" data-subtab="kgi">📊 KGI相関</div>
           <div class="sub-tab" data-subtab="rank">🔗 相関ランキング</div>
-          <div class="sub-tab" data-subtab="scatter">📈 国別散布図</div>
+          <div class="sub-tab" data-subtab="scatter">📈 国MAP</div>
           <div class="sub-tab" data-subtab="cr">🏆 国別スコアランキング</div>
         </div>
 
@@ -349,7 +349,7 @@
           <div id="rank-result"></div>
         </div>
 
-        <!-- サブビュー: 散布図 -->
+        <!-- サブビュー: 国MAP（散布図） -->
         <div id="subtab-scatter" class="subtab-content" style="display:none">
           <div class="control-row">
             <div class="control-group">
@@ -357,6 +357,17 @@
               <div class="toggle-group">
                 <button class="btn btn-ghost active" id="scatter-kgi-growth">GDP成長</button>
                 <button class="btn btn-ghost" id="scatter-kgi-hap">幸福</button>
+                <button class="btn btn-ghost" id="scatter-kgi-factor">因子を選ぶ</button>
+              </div>
+            </div>
+            <div class="control-group" id="scatter-yfactor-group" style="display:none;flex:1;max-width:340px">
+              <label>縦軸の因子を検索</label>
+              <div class="wef-search-wrap">
+                <span class="fsel-icon" style="left:10px">🔍</span>
+                <input type="text" id="scatter-yfactor-search" placeholder="ラベル名で検索…" oninput="renderScatterYDropdown()">
+                <div id="scatter-yfactor-dropdown">
+                  <div id="scatter-yfactor-droplist"></div>
+                </div>
               </div>
             </div>
           </div>
@@ -1039,19 +1050,49 @@ function renderFactorRank(){
 // ============================================================
 // 散布図
 // ============================================================
+let scatterYFactorKey = null;  // 縦軸に任意因子を選んだ場合のkey
+
 function renderScatter(){
   const key = CURRENT_FACTOR_KEY;
   const f = DATA.factors[key]; if(!f) return;
-  const yKey=scatterKgi==='growth'?'gdp_growth':'happiness';
-  const yLabel=scatterKgi==='growth'?'GDP成長率 CAGR (1999–2019)':'幸福（Positive affect）';
-  const corrVal=scatterKgi==='growth'?f.corr_growth:f.corr_happiness;
+
+  let yKey, yLabel, corrVal, yIsFactor=false, yFactorObj=null;
+
+  if(scatterKgi === 'factor' && scatterYFactorKey && DATA.factors[scatterYFactorKey]) {
+    yIsFactor = true;
+    yFactorObj = DATA.factors[scatterYFactorKey];
+    yLabel = yFactorObj.label;
+    // 因子同士の相関: factor_top_corrから探す。なければ後で実データから計算
+    const tc = DATA.factor_top_corr?.[key];
+    let found = null;
+    if(tc) {
+      found = tc.top.find(it=>it[0]===scatterYFactorKey) || tc.bottom.find(it=>it[0]===scatterYFactorKey);
+    }
+    corrVal = found ? found[1] : null;  // 見つからなければ後で実測計算
+  } else {
+    yKey = scatterKgi==='growth' ? 'gdp_growth' : 'happiness';
+    yLabel = scatterKgi==='growth' ? 'GDP成長率 CAGR (1999–2019)' : '幸福（Positive affect）';
+    corrVal = scatterKgi==='growth' ? f.corr_growth : f.corr_happiness;
+  }
+
   const pts=[];
   COUNTRIES.forEach(c=>{
     const country=DATA.countries[c.id]; if(!country) return;
-    const x=f.country_scores[c.id], y=country[yKey];
+    const x=f.country_scores[c.id];
+    const y = yIsFactor ? yFactorObj.country_scores[c.id] : country[yKey];
     if(x==null||y==null) return;
     pts.push({id:c.id,name:c.name,x,y});
   });
+
+  // 因子×因子モードで相関係数が事前計算に無い場合は実測から計算
+  if(yIsFactor && corrVal==null && pts.length>=5) {
+    const mx=d3.mean(pts,d=>d.x), my=d3.mean(pts,d=>d.y);
+    const num=d3.sum(pts,d=>(d.x-mx)*(d.y-my));
+    const denx=Math.sqrt(d3.sum(pts,d=>(d.x-mx)**2));
+    const deny=Math.sqrt(d3.sum(pts,d=>(d.y-my)**2));
+    corrVal = (denx>0&&deny>0) ? num/(denx*deny) : null;
+  }
+
   const wrap=document.getElementById('scatter-wrap');
   const W=Math.max(wrap.clientWidth||640,500), H=400;
   const M={top:28,right:36,bottom:56,left:64};
@@ -1062,6 +1103,13 @@ function renderScatter(){
   const yS=d3.scaleLinear().domain([yE[0]-yP,yE[1]+yP]).range([iH,0]);
   const svg=d3.select('#scatter-svg').attr('width',W).attr('height',H).attr('style','display:block');
   svg.selectAll('*').remove();
+
+  if(pts.length === 0) {
+    svg.append('text').attr('x',W/2).attr('y',H/2).attr('text-anchor','middle')
+      .attr('fill','var(--muted)').attr('font-size','13px').text('表示できるデータがありません');
+    return;
+  }
+
   const g=svg.append('g').attr('transform',`translate(${M.left},${M.top})`);
   g.selectAll('.gx').data(xS.ticks(6)).join('line').attr('x1',d=>xS(d)).attr('x2',d=>xS(d)).attr('y1',0).attr('y2',iH).attr('stroke','var(--border)');
   g.selectAll('.gy').data(yS.ticks(6)).join('line').attr('x1',0).attr('x2',iW).attr('y1',d=>yS(d)).attr('y2',d=>yS(d)).attr('stroke','var(--border)');
@@ -1078,7 +1126,7 @@ function renderScatter(){
     .style('filter',d=>d.id==='JPN'?'drop-shadow(0 0 5px var(--accent))':'none')
     .on('mousemove',(event,d)=>{
       tooltip.classList.remove('tooltip-hidden');
-      tooltip.innerHTML=`<strong>${FLAGS[d.id]||''} ${d.name}</strong><br>${f.label}: ${fmtScore(d.x)}<br>${yLabel.split('(')[0].trim()}: ${d.y.toFixed(4)}`;
+      tooltip.innerHTML=`<strong>${FLAGS[d.id]||''} ${d.name}</strong><br>${f.label}: ${fmtScore(d.x)}<br>${yLabel.split('(')[0].trim()}: ${typeof d.y==='number'?d.y.toFixed(4):d.y}`;
       const r=wrap.getBoundingClientRect();
       tooltip.style.left=(event.clientX-r.left+14)+'px'; tooltip.style.top=(event.clientY-r.top-20)+'px';
     }).on('mouseleave',()=>tooltip.classList.add('tooltip-hidden'));
@@ -1226,7 +1274,40 @@ function renderWefDropdown(){
   }).join('') || '<div class="empty" style="padding:12px">該当なし</div>';
   dd.classList.add('open');
 }
-function setWefHighlight(key, label){
+
+// ===== 国MAP（散布図）縦軸: 任意因子検索 =====
+function renderScatterYDropdown(){
+  const q = document.getElementById('scatter-yfactor-search').value.trim().toLowerCase();
+  const dd = document.getElementById('scatter-yfactor-dropdown');
+  if(!q){ dd.classList.remove('open'); return; }
+  // 横軸（現在選択中の因子）は除外
+  const pool = searchPool(
+    ALL_FACTORS.filter(f=>f.key!==CURRENT_FACTOR_KEY), q
+  ).slice(0, 30);
+  document.getElementById('scatter-yfactor-droplist').innerHTML = pool.map(f=>{
+    const hit = matchedKw(f, q);
+    const jpnDev = DATA.factors[f.key]?.deviation_scores?.JPN;
+    return `<div class="fsel-drop-item" onclick="selectScatterYFactor('${f.key}','${f.label.replace(/'/g,"\\'")}')">
+      <div class="di-label">${f.label}${f.selected?'<span class="badge-selected">選抜</span>':''}
+        ${hit ? `<span style="font-size:10px;color:#e8c840;margin-left:6px">≈ ${hit}</span>` : ''}
+      </div>
+      <div class="di-meta">
+        <span class="${f.corr_growth>=0.2?'fsel-corr-g':f.corr_growth<=-0.2?'fsel-corr-gn':'fsel-corr-gm'}">成長 ${fmtCorr(f.corr_growth)}</span>
+        <span class="${f.corr_happiness>=0.2?'fsel-corr-g':f.corr_happiness<=-0.2?'fsel-corr-gn':'fsel-corr-gm'}">幸福 ${fmtCorr(f.corr_happiness)}</span>
+        <span style="color:${devColor(jpnDev)}">JP偏差値 ${jpnDev!=null?jpnDev.toFixed(1):'—'}</span>
+      </div>
+    </div>`;
+  }).join('') || '<div class="empty" style="padding:12px">該当なし</div>';
+  dd.classList.add('open');
+}
+
+function selectScatterYFactor(key, label){
+  scatterYFactorKey = key;
+  document.getElementById('scatter-yfactor-search').value = label;
+  document.getElementById('scatter-yfactor-dropdown').classList.remove('open');
+  renderScatter();
+}
+
   wefHighlightKey = key;
   document.getElementById('wef-search').value = label;
   document.getElementById('wef-dropdown').classList.remove('open');
@@ -1356,9 +1437,33 @@ function initAll(){
 
   // 散布図縦軸
   document.getElementById('scatter-kgi-growth').addEventListener('click',()=>{
-    scatterKgi='growth'; tog('scatter-kgi-growth','scatter-kgi-hap'); renderScatter();});
+    scatterKgi='growth';
+    document.getElementById('scatter-kgi-growth').classList.add('active');
+    document.getElementById('scatter-kgi-hap').classList.remove('active');
+    document.getElementById('scatter-kgi-factor').classList.remove('active');
+    document.getElementById('scatter-yfactor-group').style.display='none';
+    renderScatter();
+  });
   document.getElementById('scatter-kgi-hap').addEventListener('click',()=>{
-    scatterKgi='happiness'; tog('scatter-kgi-hap','scatter-kgi-growth'); renderScatter();});
+    scatterKgi='happiness';
+    document.getElementById('scatter-kgi-hap').classList.add('active');
+    document.getElementById('scatter-kgi-growth').classList.remove('active');
+    document.getElementById('scatter-kgi-factor').classList.remove('active');
+    document.getElementById('scatter-yfactor-group').style.display='none';
+    renderScatter();
+  });
+  document.getElementById('scatter-kgi-factor').addEventListener('click',()=>{
+    scatterKgi='factor';
+    document.getElementById('scatter-kgi-factor').classList.add('active');
+    document.getElementById('scatter-kgi-growth').classList.remove('active');
+    document.getElementById('scatter-kgi-hap').classList.remove('active');
+    document.getElementById('scatter-yfactor-group').style.display='flex';
+    if(scatterYFactorKey) renderScatter();
+  });
+  document.addEventListener('click', e=>{
+    const wrap = document.querySelector('#scatter-yfactor-group .wef-search-wrap');
+    if(wrap && !wrap.contains(e.target)) document.getElementById('scatter-yfactor-dropdown')?.classList.remove('open');
+  });
 
   // 国別スコアランキングソート
   document.getElementById('cr-sort-desc').addEventListener('click',()=>{crSort='desc';tog('cr-sort-desc','cr-sort-asc');renderCountryRank();});
@@ -1415,6 +1520,8 @@ window.renderFselDropdown = renderFselDropdown;
 window.selectFactor = selectFactor;
 window.renderWefDropdown = renderWefDropdown;
 window.setWefHighlight = setWefHighlight;
+window.renderScatterYDropdown = renderScatterYDropdown;
+window.selectScatterYFactor = selectScatterYFactor;
 window.clearWefHighlight = clearWefHighlight;
 window.toggleSidebar = toggleSidebar;
 window.closeSidebar = closeSidebar;

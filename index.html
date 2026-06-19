@@ -260,7 +260,7 @@
     <div id="sidebar-header">
       <div class="logo">社会戦略フォーラム</div>
       <h1>World Effect<br>Evaluator <span style="display:inline-block;background:rgba(232,200,64,.15);color:var(--accent);border:1px solid rgba(232,200,64,.3);font-size:9px;padding:1px 6px;border-radius:3px;vertical-align:middle;font-weight:700">β版</span></h1>
-      <p>37カ国 × 1180因子</p>
+      <p id="sidebar-factor-count">37カ国 × 1180因子</p>
     </div>
     <nav>
       <div class="nav-section">因子を理解する</div>
@@ -440,7 +440,7 @@
             <label>表示対象</label>
             <div class="toggle-group">
               <button class="btn btn-ghost active" id="wef-mode-selected">選抜148</button>
-              <button class="btn btn-ghost" id="wef-mode-all">全1180因子</button>
+              <button class="btn btn-ghost" id="wef-mode-all">全因子</button>
             </div>
           </div>
           <div class="control-group" style="flex:1">
@@ -589,6 +589,15 @@ async function loadData() {
       if(a.id==='JPN') return -1; if(b.id==='JPN') return 1;
       return a.name.localeCompare(b.name);
     });
+
+    // 因子数・国数の表示を実データに合わせて更新
+    const nFactors = ALL_FACTORS.length;
+    const nCountries = COUNTRIES.length;
+    const nSelected = ALL_FACTORS.filter(f=>f.selected).length;
+    document.getElementById('sidebar-factor-count').textContent = `${nCountries}カ国 × ${nFactors}因子`;
+    document.getElementById('topbar-badge').textContent = `${nFactors}因子`;
+    document.querySelectorAll('[data-subtab-badge]').forEach(el=>{});
+
     document.getElementById('loading').style.display='none';
     initAll();
     showView('factor-hub');

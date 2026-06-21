@@ -456,6 +456,7 @@
           <div class="control-group" style="justify-content:flex-end">
             <label>&nbsp;</label>
             <button class="btn btn-ghost" id="wef-clear-hl" style="display:none" onclick="clearWefHighlight()">✕ ハイライト解除</button>
+            <button class="btn btn-primary" id="wef-explain" onclick="explainWEF()">💡 やさしく解説</button>
           </div>
         </div>
         <div id="wef-hl-info" style="margin-bottom:10px"></div>
@@ -1350,6 +1351,65 @@ function quadrantBadgeInline(cg,ch){
   else if(G_&&H_){label='SABOTAGE';color='var(--neg)'}
   else{label='SLIGHT';color='var(--muted)'}
   return `<span style="color:${color};font-weight:700">${label}</span>`;
+}
+
+// ============================================================
+// 「やさしく解説」: いま見ている内容を解説ページ(interpret.html)へ渡す
+//   interpret.html は同じリポジトリに同梱。AI 呼び出しは解説ページ側が
+//   relay 経由で行う（このページは payload を渡すだけ・鍵は持たない）。
+// ============================================================
+function openInterpreter(view, focus, dataLines){
+  const payload = { view, focus, data: dataLines.filter(Boolean).join('\n') };
+  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  window.open('interpret.html#payload=' + encodeURIComponent(b64), '_blank', 'noopener');
+}
+
+function plainQuadrant(cg,ch){
+  const G=(cg||0)>=0.2,G_=(cg||0)<=-0.2,H=(ch||0)>=0.2,H_=(ch||0)<=-0.2;
+  if(G&&H)  return 'SUCCESS（成長・幸福どちらにも有効）';
+  if(G&&H_) return 'SPARTA（成長◯・幸福を損なう）';
+  if(H&&G_) return 'SPOIL（幸福◯・成長を損なう）';
+  if(G_&&H_)return 'SABOTAGE（どちらにも逆効果）';
+  return 'SLIGHT（効果は限定的）';
+}
+
+function explainWEF(){
+  const modeLabel = wefMode==='selected' ? '選抜148因子' : '全因子';
+  const f = wefHighlightKey ? DATA.factors[wefHighlightKey] : null;
+  if(f){
+    openInterpreter(
+      'World Effect Map (4象限)',
+      `因子「${f.label}」（${modeLabel}表示中）`,
+      [
+        `カテゴリ: ${f.category||'―'}`,
+        `GDP成長との相関 r = ${fmtCorr(f.corr_growth)}`,
+        `幸福(ポジティブ感情)との相関 r = ${fmtCorr(f.corr_happiness)}`,
+        `4象限の分類: ${plainQuadrant(f.corr_growth, f.corr_happiness)}`,
+        f.selected ? '選抜148に含まれる因子' : '選抜外の因子',
+      ]
+    );
+  } else {
+    // 因子未選択: 表示中の点の象限内訳を集計して全体像を渡す
+    const pts = (wefMode==='selected'?ALL_FACTORS.filter(x=>x.selected):ALL_FACTORS)
+      .filter(x=>x.corr_growth!=null&&x.corr_happiness!=null);
+    const t={SUCCESS:0,SPARTA:0,SPOIL:0,SABOTAGE:0,SLIGHT:0};
+    pts.forEach(x=>{
+      const G=x.corr_growth>=0.2,G_=x.corr_growth<=-0.2,H=x.corr_happiness>=0.2,H_=x.corr_happiness<=-0.2;
+      if(G&&H)t.SUCCESS++;else if(G&&H_)t.SPARTA++;else if(H&&G_)t.SPOIL++;else if(G_&&H_)t.SABOTAGE++;else t.SLIGHT++;
+    });
+    openInterpreter(
+      'World Effect Map (4象限)',
+      `World Effect Map 全体（${modeLabel}・${pts.length}因子）`,
+      [
+        '横軸=幸福との相関、縦軸=GDP成長との相関、しきい値 ±0.2 で4象限に分類',
+        `SUCCESS（両利き）: ${t.SUCCESS}因子`,
+        `SPARTA（成長優先）: ${t.SPARTA}因子`,
+        `SPOIL（幸福優先）: ${t.SPOIL}因子`,
+        `SABOTAGE（逆効果）: ${t.SABOTAGE}因子`,
+        `SLIGHT（微力）: ${t.SLIGHT}因子`,
+      ]
+    );
+  }
 }
 
 function renderWEF(){

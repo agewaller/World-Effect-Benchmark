@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>このグラフ、どういう意味？ ─ World Effect やさしい解説</title>
+<meta name="description" content="World Effect Benchmark のグラフや数字を、統計が苦手な人にもやさしく解説します。">
+<meta name="robots" content="noindex">
+<style>
+  /* ライトテーマ固定（ダークテーマは追加しない） */
+  :root {
+    --bg: #f7f8fa; --card: #ffffff; --ink: #1f2733; --sub: #5b6675;
+    --line: #e3e7ee; --accent: #2b6cb0; --accent-ink: #ffffff;
+    --good: #2f855a; --warn: #b7791f; --soft: #eef3fb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 20px 16px 64px; }
+  header h1 { font-size: 1.35rem; margin: 8px 0 4px; }
+  header p { color: var(--sub); margin: 0 0 18px; font-size: .92rem; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px 16px; margin: 14px 0; box-shadow: 0 1px 2px rgba(20,30,50,.04);
+  }
+  label { display: block; font-weight: 600; margin: 12px 0 6px; font-size: .92rem; }
+  select, input[type=text], textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
+    font: inherit; color: var(--ink); background: #fff;
+  }
+  textarea { min-height: 140px; resize: vertical; font-size: .9rem; }
+  .hint { color: var(--sub); font-size: .82rem; margin: 4px 0 0; }
+  button {
+    appearance: none; border: 0; border-radius: 12px; cursor: pointer;
+    font: inherit; font-weight: 700; padding: 13px 18px;
+  }
+  .primary { background: var(--accent); color: var(--accent-ink); width: 100%; margin-top: 16px; font-size: 1.05rem; }
+  .primary:disabled { opacity: .55; cursor: default; }
+  .out {
+    white-space: pre-wrap; word-break: break-word;
+    background: var(--soft); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px; margin-top: 14px; min-height: 40px;
+  }
+  .out strong { color: var(--ink); }
+  .badge { display: inline-block; background: var(--soft); color: var(--accent);
+    border: 1px solid #d6e2f3; border-radius: 999px; padding: 2px 10px; font-size: .8rem; }
+  .err { color: #c53030; }
+  details summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+  footer { color: var(--sub); font-size: .8rem; margin-top: 26px; text-align: center; }
+  .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid #fff;
+    border-top-color: transparent; border-radius: 50%; animation: sp .8s linear infinite;
+    vertical-align: -2px; margin-right: 8px; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="badge">World Effect Benchmark</span>
+    <h1>このグラフ、どういう意味？</h1>
+    <p>表示されている数字を、統計が苦手な人にもわかる言葉でやさしく解説します。
+       グラフの「示唆」と、ちょっと意外な発見（something new）まで読み解きます。</p>
+  </header>
+
+  <div class="card">
+    <label for="view">いま見ている画面</label>
+    <select id="view">
+      <option value="World Effect Map (4象限)">World Effect Map（4つの窓・象限）</option>
+      <option value="KGI相関">KGI相関（成長・幸福との関係カード）</option>
+      <option value="相関ランキング">相関ランキング（因子どうしの関係）</option>
+      <option value="国MAP (散布図)">国MAP（国を点で散らした散布図）</option>
+      <option value="国別スコアランキング">国別スコアランキング（国の順位）</option>
+      <option value="国プロフィール">国プロフィール（1か国の特徴）</option>
+      <option value="2国比較">2国比較</option>
+    </select>
+
+    <label for="focus">注目している対象（因子名・国名など）</label>
+    <input id="focus" type="text" placeholder="例: 因子「教育への公的支出」／ 日本 vs ドイツ">
+
+    <label for="data">画面に出ている数字・データ</label>
+    <textarea id="data" placeholder="画面の数字をそのまま貼り付けるか、見えているものを書いてください。&#10;例:&#10;GDP成長との相関 r = -0.12&#10;幸福との相関 r = +0.41&#10;分類: SPOIL（幸福優先）&#10;日本の偏差値: 58"></textarea>
+    <p class="hint">ベンチマーク画面の「やさしく解説」ボタンから来た場合は自動で入ります。
+       わからなければ、見えている数字をそのまま貼り付けるだけで大丈夫です。</p>
+
+    <button id="go" class="primary">やさしく解説してもらう</button>
+  </div>
+
+  <div id="result" class="card" style="display:none">
+    <div id="out" class="out"></div>
+  </div>
+
+  <details class="card">
+    <summary>この解説のしくみ・注意</summary>
+    <p class="hint" style="margin-top:10px">
+      これは 37 か国（OECD）・限られた期間のデータから見える「傾向（相関）」の解説です。
+      「原因と結果（因果）」を示すものではなく、医療・投資・政策の助言でもありません。
+      AI による要約のため、正確な数値は元のグラフでご確認ください。
+    </p>
+  </details>
+
+  <footer>
+    社会戦略フォーラム / World Effect Benchmark のための解説ツール
+  </footer>
+</div>
+
+<script>
+"use strict";
+// ───────────────────────────────────────────────────────────
+// 既存の健康日記アプリと同じ単一の安全な経路を再利用する。
+// ブラウザは API キーを一切送らない。relay → proxy Worker が
+// サーバ側の鍵を注入する。Origin 許可リストにより本オリジン
+// （cares.advisers.jp 等）からの呼び出しのみ通る。
+// ───────────────────────────────────────────────────────────
+var RELAY_URL = "https://cares-relay.agewaller.workers.dev/v1/messages";
+var MODEL = "claude-opus-4-8"; // 最新・最強。relay 側で API id を解決。
+
+// interpret-prompt.md と同一のプロンプト（システム + 本文テンプレート）。
+var SYSTEM_PROMPT = [
+"あなたは「ワールド・エフェクト解説者」です。",
+"社会・経済データの専門家でありながら、統計やグラフがまったく読めない人にも、",
+"台所で隣のおばあちゃんに話すように、やさしく・正確に説明できる稀有な通訳者です。",
+"",
+"読者像（最重要）:",
+"- グラフの軸・相関係数・偏差値・CAGR といった言葉を知らない一般の生活者。",
+"- 「で、結局どういうこと？」「私の国は良いの？悪いの？」を一番知りたい人。",
+"- 数字に少し身構えている。むずかしい言葉が続くと読むのをやめてしまう。",
+"",
+"あなたの使命は、目の前のグラフ1枚が語っている物語を、",
+"(1) まず安心させる一言から始め、",
+"(2) むずかしい言葉を日常のたとえに翻訳し、",
+"(3) そのデータならではの「ハッとする発見（something new）」を1つ示し、",
+"(4) 最後に、読者が今日からできる小さな一歩を1つ手渡すことです。",
+"",
+"絶対の前提:",
+"- これは「相関」のデータであって「因果（原因と結果）」ではありません。",
+"  「A が高い国は B も高い傾向がある」と言えても「A をやれば B になる」とは言えません。",
+"  この区別は、誤解を生まないよう必ず・やさしく・繰り返し伝えてください。",
+"- 対象は OECD の 37 か国だけ、期間も限られた一時点の傾向です。世界全体や未来の断定はできません。",
+"- 政治的・イデオロギー的に中立を保ち、特定の主義・政党・国を持ち上げたり貶めたりしないでください。"
+].join("\n");
+
+function buildPrompt(view, focus, data) {
+  return [
+"いま画面に出ているグラフについて、統計が苦手な人にもわかるように解説してください。",
+"",
+"━━━━━━━━━━━━━━━━━━━━━━━━",
+"【このサービスについての前提知識】",
+"━━━━━━━━━━━━━━━━━━━━━━━━",
+"World Effect Benchmark は、世界の豊かな国 37 か国（OECD 加盟国）を題材に、",
+"「ある社会の特徴（因子）」が、その国の",
+"  ・経済の伸び（GDP 成長率。1999〜2019 年の年あたり平均の伸び）",
+"  ・人々の幸福（2020〜2023 年の前向きな気持ち＝ポジティブ感情の多さ）",
+"と、どれくらい一緒に動いているかを 1180 個の因子について調べたものです。",
+"",
+"数字の読み方（読者には言葉でかみくだいて伝えること）:",
+"- 相関係数（r）: −1〜+1 の値。2つがどれくらい足並みをそろえて動くかの目安。",
+"    +1 に近い…片方が高い国はもう片方も高い傾向（同じ方向）。",
+"    −1 に近い…片方が高い国はもう片方が低い傾向（逆方向）。0 に近い…関係は見られない。",
+"    ±0.2 を「関係がありそう」の目安、+0.5 で「まあまあはっきり」、+0.3 前後で「ゆるやか」。",
+"- 偏差値: その国がほかの国と比べ高いか低いかの位置。50 が真ん中。60↑高い、40↓低い。",
+"- 4つの窓（World Effect Map）: 因子を「成長に効くか」「幸福に効くか」で 4 分類。",
+"    ✅ SUCCESS（両利き）…成長にも幸福にも良い方向。",
+"    ⚔️ SPARTA（成長優先）…成長には良いが幸福は犠牲になりがち。",
+"    🌸 SPOIL（幸福優先）…幸福には良いが成長は鈍りがち。",
+"    🚫 SABOTAGE（逆効果）…成長にも幸福にもマイナス。",
+"    ⬜ SLIGHT（微力）…どちらともあまり関係がなく効果は薄い。",
+"",
+"━━━━━━━━━━━━━━━━━━━━━━━━",
+"【いま見ているグラフ】",
+"━━━━━━━━━━━━━━━━━━━━━━━━",
+"画面の種類: " + view,
+"注目している対象: " + (focus || "（特に指定なし）"),
+"画面に表示されている数値・データ:",
+(data || "（数値の指定がない場合は、画面の種類から一般的な読み方を説明してください）"),
+"",
+"━━━━━━━━━━━━━━━━━━━━━━━━",
+"【解説の手順 ─ 必ずこの流れで】",
+"━━━━━━━━━━━━━━━━━━━━━━━━",
+"1.【ひとことで言うと】このグラフが伝えたいことを専門用語ゼロで 2〜3 文に要約。",
+"2.【グラフの読み方】何の軸・何の数字を見ているのかをたとえ話で説明。数字は日常語に変換。",
+"3.【ここがポイント】表示データで一番目を引く点を 2〜3 個かみくだいて。断定でなく「傾向が見えます」。",
+"4.【💡 ちょっと意外な発見（something new）】パッと見では気づきにくい“へぇ”を 1 つ。なければ正直に。",
+"5.【⚠️ 読み違えないために】相関は因果ではないこと、37か国・限られた期間の話、例外もあることを念押し。",
+"6.【次の一歩】読者が今日からできる小さなアクションを 1 つだけ提案。",
+"",
+"━━━━━━━━━━━━━━━━━━━━━━━━",
+"【書き方のルール】",
+"━━━━━━━━━━━━━━━━━━━━━━━━",
+"- 全文やさしい日本語。専門用語の直後に「（＝〜という意味）」を添える。",
+"- 上の見出しはそのまま使い、各 1〜4 文で簡潔に。絵文字は見出しの目印程度に控えめに。",
+"- 数字を並べるだけにしない。必ず「それが何を意味するか」まで言葉にする。",
+"- 価値判断・政策提言は断定しない。「データ上はこう見える」にとどめる。",
+"- 全体で 400〜700 字程度。日本語で回答してください。"
+  ].join("\n");
+}
+
+// ───────────────────────────────────────────────────────────
+// ベンチマーク本体からの自動連携:
+//   interpret.html#payload=<base64(JSON)> で開かれると自動で読み込む。
+//   JSON 形: { view, focus, data }  （data は文字列でも配列でも可）
+// ───────────────────────────────────────────────────────────
+(function loadFromHash(){
+  try {
+    var h = location.hash || "";
+    var m = /[#&]payload=([^&]+)/.exec(h);
+    if (!m) return;
+    var json = decodeURIComponent(escape(atob(decodeURIComponent(m[1]))));
+    var p = JSON.parse(json);
+    if (p.view)  document.getElementById("view").value =
+      [...document.getElementById("view").options].some(o=>o.value===p.view) ? p.view : document.getElementById("view").value;
+    if (p.focus) document.getElementById("focus").value = String(p.focus);
+    if (p.data)  document.getElementById("data").value =
+      typeof p.data === "string" ? p.data : JSON.stringify(p.data, null, 2);
+    // 自動で解説を走らせる（ボタンを押す手間を省く）
+    if (p.data || p.focus) setTimeout(run, 150);
+  } catch (e) { /* 壊れた hash は無視して手入力にフォールバック */ }
+})();
+
+// ───────────────────────────────────────────────────────────
+// 出力の軽い整形（**太字** と見出しだけ。XSS 防止に必ずエスケープ）
+// ───────────────────────────────────────────────────────────
+function escapeHtml(s){
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+function render(text){
+  var safe = escapeHtml(text);
+  safe = safe.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  return safe;
+}
+
+var btn = document.getElementById("go");
+var resultCard = document.getElementById("result");
+var out = document.getElementById("out");
+
+async function run(){
+  var view  = document.getElementById("view").value;
+  var focus = document.getElementById("focus").value.trim();
+  var data  = document.getElementById("data").value.trim();
+
+  btn.disabled = true;
+  resultCard.style.display = "block";
+  out.className = "out";
+  out.innerHTML = '<span class="spin"></span>やさしい言葉に翻訳しています…';
+
+  var body = {
+    model: MODEL,
+    max_tokens: 1500,
+    temperature: 0.4,
+    system: SYSTEM_PROMPT,
+    messages: [{ role: "user", content: buildPrompt(view, focus, data) }]
+  };
+
+  try {
+    var resp = await fetch(RELAY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "anthropic-version": "2023-06-01" },
+      body: JSON.stringify(body)
+    });
+    if (!resp.ok) {
+      var msg = resp.status === 401 ? "解説サービスの認証エラーです。管理者にお知らせください。"
+              : resp.status >= 500 ? "解説サービスが一時的に混み合っています。少し待って再度お試しください。"
+              : ("解説の取得に失敗しました（" + resp.status + "）。");
+      throw new Error(msg);
+    }
+    var json = await resp.json();
+    var text = (json.content && json.content[0] && json.content[0].text) || "";
+    if (!text) throw new Error("うまく解説を受け取れませんでした。もう一度お試しください。");
+    out.innerHTML = render(text);
+  } catch (e) {
+    out.className = "out err";
+    out.textContent = "⚠️ " + (e && e.message ? e.message : "通信に失敗しました。少し待って再度お試しください。");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+btn.addEventListener("click", run);
+</script>
+</body>
+</html>

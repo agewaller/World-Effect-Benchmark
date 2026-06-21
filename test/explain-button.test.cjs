@@ -33,7 +33,7 @@ const REPO = path.resolve(__dirname, '..');
 // D3 は test/fixtures に同梱（オフライン実行のため）。無ければ /tmp の取得分を使う。
 const D3_LOCAL = [path.join(__dirname, 'fixtures', 'd3.min.js'), '/tmp/pwtest/package/dist/d3.min.js']
   .find(p => fs.existsSync(p)) || path.join(__dirname, 'fixtures', 'd3.min.js');
-const RELAY_HOST = 'cares-relay.agewaller.workers.dev';
+const EXPLAIN_API_PATH = '/api/trial/explain'; // cares のサーバ側公開エンドポイント
 
 const MOCK_TEXT =
   '【ひとことで言うと】これはテスト用のモック解説です。\n' +
@@ -78,11 +78,11 @@ async function runVariant(browser, base, file, label) {
       return route.fulfill({ status: 200, contentType: 'application/javascript',
         body: 'export const pipeline=null;export const env={};' });
     }
-    if (url.includes(RELAY_HOST)) {
+    if (url.includes(EXPLAIN_API_PATH)) {
       result.relayCalled = true;
       try { result.relayBody = JSON.parse(route.request().postData() || '{}'); } catch {}
       return route.fulfill({ status: 200, contentType: 'application/json',
-        body: JSON.stringify({ role: 'assistant', content: [{ type: 'text', text: MOCK_TEXT }] }) });
+        body: JSON.stringify({ comment: MOCK_TEXT, modelUsed: 'claude-haiku-4-5', remainingToday: 29 }) });
     }
     return route.continue();
   });
@@ -144,13 +144,13 @@ async function runVariant(browser, base, file, label) {
 
   const refErr = (r) => r.pageErrors.some(e => /explainCurrentScreen is not defined/.test(e));
   const checks = [
-    ['[FIXED] relay(AI) 呼び出しが発火した',                 fixed.relayCalled === true],
+    ['[FIXED] cares解説API(/api/trial/explain) 呼び出しが発火した', fixed.relayCalled === true],
     ['[FIXED] #explain-result が表示された',                 fixed.resultVisible === true],
     ['[FIXED] エラー表示ではなく解説本文が出た',             fixed.resultIsError === false && fixed.resultText.includes('モック解説')],
     ['[FIXED] ReferenceError が出ていない',                  refErr(fixed) === false],
-    ['[FIXED] 送信プロンプトに画面コンテキストが含まれる',   !!fixed.relayBody && JSON.stringify(fixed.relayBody).includes('社員の熱意')],
+    ['[FIXED] 送信ボディに画面コンテキスト(view/focus/data)が含まれる', !!fixed.relayBody && JSON.stringify(fixed.relayBody).includes('社員の熱意')],
     ['[NO-FIX] 修正なしだと ReferenceError が発生する',      refErr(nofix) === true],
-    ['[NO-FIX] 修正なしだと relay は呼ばれない',             nofix.relayCalled === false],
+    ['[NO-FIX] 修正なしだと解説APIは呼ばれない',            nofix.relayCalled === false],
     ['[NO-FIX] 修正なしだと結果は表示されない',              nofix.resultVisible === false],
   ];
 

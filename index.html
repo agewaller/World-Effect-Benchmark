@@ -456,7 +456,6 @@
           <div class="control-group" style="justify-content:flex-end">
             <label>&nbsp;</label>
             <button class="btn btn-ghost" id="wef-clear-hl" style="display:none" onclick="clearWefHighlight()">✕ ハイライト解除</button>
-            <button class="btn btn-primary" id="wef-explain" onclick="explainWEF()">💡 やさしく解説</button>
           </div>
         </div>
         <div id="wef-hl-info" style="margin-bottom:10px"></div>
@@ -464,6 +463,27 @@
           <svg id="wef-svg"></svg>
           <div class="tooltip tooltip-hidden" id="wef-tooltip"></div>
         </div>
+      </div>
+
+      <!-- ====== 共通: この画面をやさしく解説（全ビューの下に表示） ====== -->
+      <style>
+        #explain-panel{margin-top:30px;padding-top:22px;border-top:1px dashed var(--border);text-align:center}
+        #explain-panel .explain-hint{font-size:11px;color:var(--muted);margin-top:8px}
+        #explain-btn{font-size:14px;padding:12px 24px}
+        #explain-result{display:none;text-align:left;margin-top:16px;background:var(--surface);
+          border:1px solid var(--border);border-radius:var(--r);padding:18px 20px;
+          line-height:1.9;white-space:pre-wrap;font-size:14px;color:var(--text)}
+        #explain-result.err{border-color:var(--neg);color:var(--neg)}
+        #explain-result strong{color:var(--accent)}
+        .explain-spin{display:inline-block;width:14px;height:14px;border:2px solid var(--border);
+          border-top-color:var(--accent);border-radius:50%;animation:explain-rot .8s linear infinite;
+          vertical-align:-2px;margin-right:8px}
+        @keyframes explain-rot{to{transform:rotate(360deg)}}
+      </style>
+      <div id="explain-panel">
+        <button id="explain-btn" class="btn btn-primary" onclick="explainCurrentScreen()">💡 この画面をやさしく解説</button>
+        <div class="explain-hint">いま表示しているグラフの意味を、やさしい言葉でこの下に表示します</div>
+        <div id="explain-result"></div>
       </div>
     </div>
   </div>
@@ -486,6 +506,7 @@ let crSort = 'desc';
 // WEF
 let wefMode = 'selected';
 let wefHighlightKey = null;
+let CURRENT_VIEW = 'factor-hub';   // いま表示しているビュー（解説機能が参照）
 
 // 国
 let profileMode = 'top', profileFilter = 'all';
@@ -622,6 +643,10 @@ const VIEW_TITLES = {
 const FACTOR_HUB_VIEWS = new Set(['factor-hub']);
 
 function showView(id) {
+  CURRENT_VIEW = id;
+  // 画面を切り替えたら前の解説は消す（別画面の解説が残らないように）
+  const _er = document.getElementById('explain-result');
+  if(_er){ _er.style.display='none'; _er.innerHTML=''; }
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+id)?.classList.add('active');
@@ -1354,14 +1379,91 @@ function quadrantBadgeInline(cg,ch){
 }
 
 // ============================================================
-// 「やさしく解説」: いま見ている内容を解説ページ(interpret.html)へ渡す
-//   interpret.html は同じリポジトリに同梱。AI 呼び出しは解説ページ側が
-//   relay 経由で行う（このページは payload を渡すだけ・鍵は持たない）。
+// 「この画面をやさしく解説」: いま表示しているグラフ全体を、その場で
+// （同じ画面の下に）AI がやさしく解説する。AI 呼び出しは relay 経由で、
+// このページ自身（agewaller.github.io、許可オリジン）から直接行う。
+// 鍵はサーバ側だけ。ブラウザは鍵を持たない／送らない。
 // ============================================================
-function openInterpreter(view, focus, dataLines){
-  const payload = { view, focus, data: dataLines.filter(Boolean).join('\n') };
-  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
-  window.open('interpret.html#payload=' + encodeURIComponent(b64), '_blank', 'noopener');
+const EXPLAIN_RELAY_URL = "https://cares-relay.agewaller.workers.dev/v1/messages";
+const EXPLAIN_MODEL = "claude-opus-4-8"; // relay 側で API id を解決
+
+const EXPLAIN_SYSTEM = [
+"あなたは「ワールド・エフェクト解説者」です。",
+"社会・経済データの専門家でありながら、統計やグラフがまったく読めない人にも、",
+"台所で隣のおばあちゃんに話すように、やさしく・正確に説明できる稀有な通訳者です。",
+"",
+"読者像（最重要）:",
+"- グラフの軸・相関係数・偏差値・CAGR といった言葉を知らない一般の生活者。",
+"- 「で、結局どういうこと？」「私の国は良いの？悪いの？」を一番知りたい人。",
+"- 数字に少し身構えている。むずかしい言葉が続くと読むのをやめてしまう。",
+"",
+"あなたの使命は、目の前のグラフ1枚が語っている物語を、",
+"(1) まず安心させる一言から始め、",
+"(2) むずかしい言葉を日常のたとえに翻訳し、",
+"(3) そのデータならではの「ハッとする発見（something new）」を1つ示し、",
+"(4) 最後に、読者が今日からできる小さな一歩を1つ手渡すことです。",
+"",
+"絶対の前提:",
+"- これは「相関」のデータであって「因果（原因と結果）」ではありません。",
+"  「A が高い国は B も高い傾向がある」と言えても「A をやれば B になる」とは言えません。",
+"  この区別は、誤解を生まないよう必ず・やさしく・繰り返し伝えてください。",
+"- 対象は OECD の 37 か国だけ、期間も限られた一時点の傾向です。世界全体や未来の断定はできません。",
+"- 政治的・イデオロギー的に中立を保ち、特定の主義・政党・国を持ち上げたり貶めたりしないでください。"
+].join("\n");
+
+function buildExplainPrompt(view, focus, data){
+  return [
+"いま画面に出ているグラフについて、統計が苦手な人にもわかるように解説してください。",
+"",
+"━━━━━━━━━━━━━━━━━━━━━━━━",
+"【このサービスについての前提知識】",
+"━━━━━━━━━━━━━━━━━━━━━━━━",
+"World Effect Benchmark は、世界の豊かな国 37 か国（OECD 加盟国）を題材に、",
+"「ある社会の特徴（因子）」が、その国の",
+"  ・経済の伸び（GDP 成長率。1999〜2019 年の年あたり平均の伸び）",
+"  ・人々の幸福（2020〜2023 年の前向きな気持ち＝ポジティブ感情の多さ）",
+"と、どれくらい一緒に動いているかを 1180 個の因子について調べたものです。",
+"",
+"数字の読み方（読者には言葉でかみくだいて伝えること）:",
+"- 相関係数（r）: −1〜+1 の値。2つがどれくらい足並みをそろえて動くかの目安。",
+"    +1 に近い…片方が高い国はもう片方も高い傾向（同じ方向）。",
+"    −1 に近い…片方が高い国はもう片方が低い傾向（逆方向）。0 に近い…関係は見られない。",
+"    ±0.2 を「関係がありそう」の目安、+0.5 で「まあまあはっきり」、+0.3 前後で「ゆるやか」。",
+"- 偏差値: その国がほかの国と比べ高いか低いかの位置。50 が真ん中。60↑高い、40↓低い。",
+"- 4つの窓（World Effect Map）: 因子を「成長に効くか」「幸福に効くか」で 4 分類。",
+"    ✅ SUCCESS（両利き）…成長にも幸福にも良い方向。",
+"    ⚔️ SPARTA（成長優先）…成長には良いが幸福は犠牲になりがち。",
+"    🌸 SPOIL（幸福優先）…幸福には良いが成長は鈍りがち。",
+"    🚫 SABOTAGE（逆効果）…成長にも幸福にもマイナス。",
+"    ⬜ SLIGHT（微力）…どちらともあまり関係がなく効果は薄い。",
+"",
+"━━━━━━━━━━━━━━━━━━━━━━━━",
+"【いま見ているグラフ】",
+"━━━━━━━━━━━━━━━━━━━━━━━━",
+"画面の種類: " + view,
+"注目している対象: " + (focus || "（特に指定なし）"),
+"画面に表示されている数値・データ:",
+(data || "（数値の指定がない場合は、画面の種類から一般的な読み方を説明してください）"),
+"",
+"━━━━━━━━━━━━━━━━━━━━━━━━",
+"【解説の手順 ─ 必ずこの流れで】",
+"━━━━━━━━━━━━━━━━━━━━━━━━",
+"1.【ひとことで言うと】このグラフが伝えたいことを専門用語ゼロで 2〜3 文に要約。",
+"2.【グラフの読み方】何の軸・何の数字を見ているのかをたとえ話で説明。数字は日常語に変換。",
+"3.【ここがポイント】表示データで一番目を引く点を 2〜3 個かみくだいて。断定でなく「傾向が見えます」。",
+"4.【💡 ちょっと意外な発見（something new）】パッと見では気づきにくい“へぇ”を 1 つ。なければ正直に。",
+"5.【⚠️ 読み違えないために】相関は因果ではないこと、37か国・限られた期間の話、例外もあることを念押し。",
+"6.【次の一歩】読者が今日からできる小さなアクションを 1 つだけ提案。",
+"",
+"━━━━━━━━━━━━━━━━━━━━━━━━",
+"【書き方のルール】",
+"━━━━━━━━━━━━━━━━━━━━━━━━",
+"- 全文やさしい日本語。専門用語の直後に「（＝〜という意味）」を添える。",
+"- 上の見出しはそのまま使い、各 1〜4 文で簡潔に。絵文字は見出しの目印程度に控えめに。",
+"- 数字を並べるだけにしない。必ず「それが何を意味するか」まで言葉にする。",
+"- 価値判断・政策提言は断定しない。「データ上はこう見える」にとどめる。",
+"- 全体で 400〜700 字程度。日本語で回答してください。"
+  ].join("\n");
 }
 
 function plainQuadrant(cg,ch){
@@ -1373,42 +1475,131 @@ function plainQuadrant(cg,ch){
   return 'SLIGHT（効果は限定的）';
 }
 
-function explainWEF(){
-  const modeLabel = wefMode==='selected' ? '選抜148因子' : '全因子';
-  const f = wefHighlightKey ? DATA.factors[wefHighlightKey] : null;
-  if(f){
-    openInterpreter(
-      'World Effect Map (4象限)',
-      `因子「${f.label}」（${modeLabel}表示中）`,
-      [
-        `カテゴリ: ${f.category||'―'}`,
-        `GDP成長との相関 r = ${fmtCorr(f.corr_growth)}`,
-        `幸福(ポジティブ感情)との相関 r = ${fmtCorr(f.corr_happiness)}`,
-        `4象限の分類: ${plainQuadrant(f.corr_growth, f.corr_happiness)}`,
-        f.selected ? '選抜148に含まれる因子' : '選抜外の因子',
-      ]
-    );
-  } else {
-    // 因子未選択: 表示中の点の象限内訳を集計して全体像を渡す
-    const pts = (wefMode==='selected'?ALL_FACTORS.filter(x=>x.selected):ALL_FACTORS)
-      .filter(x=>x.corr_growth!=null&&x.corr_happiness!=null);
+// 表示中の要素のテキストを読み取って整形（見えている数値・順位を拾う）
+function explainVisibleText(el){
+  if(!el) return '';
+  const t = (el.innerText || el.textContent || '');
+  return t.replace(/ /g,' ').replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n').trim();
+}
+
+// いま開いている画面（とサブタブ）から、解説対象のコンテキストを組み立てる
+function collectScreenContext(){
+  const v = CURRENT_VIEW;
+
+  if(v==='factor-hub'){
+    const f = DATA.factors[CURRENT_FACTOR_KEY];
+    const subLabel = {kgi:'KGI相関（成長・幸福との関係カード）', rank:'相関ランキング（この因子と一緒に動く因子）', scatter:'国MAP（散布図）', cr:'国別スコアランキング'}[CURRENT_SUBTAB] || '';
+    const subId   = {kgi:'subtab-kgi', rank:'subtab-rank', scatter:'subtab-scatter', cr:'subtab-cr'}[CURRENT_SUBTAB];
+    const lines = [];
+    if(f){
+      lines.push(`選択中の因子: ${f.label}（カテゴリ: ${f.category||'―'}）`);
+      lines.push(`GDP成長との相関 r = ${fmtCorr(f.corr_growth)} / 幸福との相関 r = ${fmtCorr(f.corr_happiness)}`);
+      lines.push(`4象限の分類: ${plainQuadrant(f.corr_growth, f.corr_happiness)}`);
+    }
+    if(CURRENT_SUBTAB==='scatter'){
+      const yLabel = scatterKgi==='growth' ? '各国のGDP成長率' : scatterKgi==='hap' ? '各国の幸福度' : '選んだもう一つの因子';
+      lines.push(`表示中: 国MAP（散布図）。横軸=この因子の各国スコア、縦軸=${yLabel}。点ひとつが1か国で、右上ほど両方が高い。`);
+    } else if(subId){
+      const body = explainVisibleText(document.getElementById(subId));
+      if(body) lines.push('画面に表示されている内容:\n' + body.slice(0,2600));
+    }
+    return { view:'World Effect Benchmark / ' + (subLabel||'因子を選ぶ'),
+             focus: f ? `因子「${f.label}」の画面` : '',
+             data: lines.filter(Boolean).join('\n') };
+  }
+
+  if(v==='country-profile'){
+    const sel = document.getElementById('profile-country-select');
+    const name = sel && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+    const body = explainVisibleText(document.getElementById('profile-result'));
+    return { view:'国プロフィール（1か国の特徴）',
+             focus: name ? `${name} のプロフィール` : '',
+             data: body.slice(0,2800) };
+  }
+
+  if(v==='country-compare'){
+    const s1=document.getElementById('cmp-country1'), s2=document.getElementById('cmp-country2');
+    const n1=s1&&s1.options[s1.selectedIndex]?s1.options[s1.selectedIndex].text:'';
+    const n2=s2&&s2.options[s2.selectedIndex]?s2.options[s2.selectedIndex].text:'';
+    const body = explainVisibleText(document.getElementById('cmp-result'));
+    return { view:'2国比較',
+             focus: (n1&&n2) ? `${n1} と ${n2} の比較` : '',
+             data: body.slice(0,2800) };
+  }
+
+  if(v==='world-effect'){
+    const modeLabel = wefMode==='selected' ? '選抜148因子' : '全因子';
+    const f = wefHighlightKey ? DATA.factors[wefHighlightKey] : null;
+    const lines = [`横軸=幸福との相関、縦軸=GDP成長との相関、しきい値±0.2で4象限に分類（${modeLabel}を表示中）`];
+    if(f){
+      lines.push(`ハイライト中の因子: ${f.label}`);
+      lines.push(`成長との相関 r=${fmtCorr(f.corr_growth)} / 幸福との相関 r=${fmtCorr(f.corr_happiness)} → ${plainQuadrant(f.corr_growth,f.corr_happiness)}`);
+    }
+    const pts=(wefMode==='selected'?ALL_FACTORS.filter(x=>x.selected):ALL_FACTORS).filter(x=>x.corr_growth!=null&&x.corr_happiness!=null);
     const t={SUCCESS:0,SPARTA:0,SPOIL:0,SABOTAGE:0,SLIGHT:0};
-    pts.forEach(x=>{
-      const G=x.corr_growth>=0.2,G_=x.corr_growth<=-0.2,H=x.corr_happiness>=0.2,H_=x.corr_happiness<=-0.2;
-      if(G&&H)t.SUCCESS++;else if(G&&H_)t.SPARTA++;else if(H&&G_)t.SPOIL++;else if(G_&&H_)t.SABOTAGE++;else t.SLIGHT++;
+    pts.forEach(x=>{const G=x.corr_growth>=0.2,G_=x.corr_growth<=-0.2,H=x.corr_happiness>=0.2,H_=x.corr_happiness<=-0.2; if(G&&H)t.SUCCESS++;else if(G&&H_)t.SPARTA++;else if(H&&G_)t.SPOIL++;else if(G_&&H_)t.SABOTAGE++;else t.SLIGHT++;});
+    lines.push(`象限の内訳（全${pts.length}因子）: SUCCESS ${t.SUCCESS} / SPARTA ${t.SPARTA} / SPOIL ${t.SPOIL} / SABOTAGE ${t.SABOTAGE} / SLIGHT ${t.SLIGHT}`);
+    return { view:'World Effect Map (4象限)',
+             focus: f ? `因子「${f.label}」` : 'World Effect Map 全体',
+             data: lines.join('\n') };
+  }
+
+  // フォールバック: アクティブなビューの見えているテキストを渡す
+  const active = document.querySelector('.view.active');
+  return { view: VIEW_TITLES[v] || 'グラフ', focus:'', data: explainVisibleText(active).slice(0,2600) };
+}
+
+function explainEscapeHtml(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function explainRender(text){
+  return explainEscapeHtml(text).replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+}
+
+let explainBusy = false;
+async function explainCurrentScreen(){
+  if(explainBusy) return;
+  const btn = document.getElementById('explain-btn');
+  const box = document.getElementById('explain-result');
+  const ctx = collectScreenContext();
+
+  explainBusy = true;
+  if(btn) btn.disabled = true;
+  box.style.display = 'block';
+  box.className = '';
+  box.innerHTML = '<span class="explain-spin"></span> いま見ている画面を、やさしい言葉に翻訳しています…';
+  box.scrollIntoView({behavior:'smooth', block:'nearest'});
+
+  try{
+    const body = {
+      model: EXPLAIN_MODEL,
+      max_tokens: 1500,
+      temperature: 0.4,
+      system: EXPLAIN_SYSTEM,
+      messages: [{ role:'user', content: buildExplainPrompt(ctx.view, ctx.focus, ctx.data) }]
+    };
+    const resp = await fetch(EXPLAIN_RELAY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'anthropic-version':'2023-06-01' },
+      body: JSON.stringify(body)
     });
-    openInterpreter(
-      'World Effect Map (4象限)',
-      `World Effect Map 全体（${modeLabel}・${pts.length}因子）`,
-      [
-        '横軸=幸福との相関、縦軸=GDP成長との相関、しきい値 ±0.2 で4象限に分類',
-        `SUCCESS（両利き）: ${t.SUCCESS}因子`,
-        `SPARTA（成長優先）: ${t.SPARTA}因子`,
-        `SPOIL（幸福優先）: ${t.SPOIL}因子`,
-        `SABOTAGE（逆効果）: ${t.SABOTAGE}因子`,
-        `SLIGHT（微力）: ${t.SLIGHT}因子`,
-      ]
-    );
+    if(!resp.ok){
+      const msg = resp.status===401 ? '解説サービスの認証エラーです。管理者にお知らせください。'
+                : resp.status>=500 ? '解説サービスが一時的に混み合っています。少し待って再度お試しください。'
+                : ('解説の取得に失敗しました（' + resp.status + '）。');
+      throw new Error(msg);
+    }
+    const json = await resp.json();
+    const text = (json.content && json.content[0] && json.content[0].text) || '';
+    if(!text) throw new Error('うまく解説を受け取れませんでした。もう一度お試しください。');
+    box.innerHTML = explainRender(text);
+  }catch(e){
+    box.className = 'err';
+    box.textContent = '⚠️ ' + ((e && e.message) ? e.message : '通信に失敗しました。少し待って再度お試しください。');
+  }finally{
+    explainBusy = false;
+    if(btn) btn.disabled = false;
   }
 }
 
